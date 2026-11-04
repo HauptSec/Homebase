@@ -1,6 +1,7 @@
 import SwiftUI
 import BackgroundTasks
 import UserNotifications
+import EventKit
 
 @MainActor final class AppDelegate: NSObject, UIApplicationDelegate, UNUserNotificationCenterDelegate {
     func application(_ application: UIApplication, didFinishLaunchingWithOptions options: [UIApplication.LaunchOptionsKey: Any]? = nil) -> Bool {
@@ -39,6 +40,18 @@ import UserNotifications
         WindowGroup {
             RootView().environmentObject(store).tint(Color("AccentColor"))
                 .task { if store.paired { await store.sync(); store.startLive(); await store.registerPush(); await CalendarBridge.shared.run(store: store) } }
+                .task(id: phase) {
+                    guard phase == .active else { return }
+                    while !Task.isCancelled {
+                        try? await Task.sleep(for: .seconds(30))
+                        guard !Task.isCancelled else { return }
+                        await store.sync()
+                        await CalendarBridge.shared.run(store: store)
+                    }
+                }
+                .onReceive(NotificationCenter.default.publisher(for: .EKEventStoreChanged)) { _ in
+                    Task { await CalendarBridge.shared.run(store: store) }
+                }
                 .onChange(of: phase) { _, value in
                     if value == .active { store.startLive(); Task { await store.sync(); await CalendarBridge.shared.run(store: store) } }
                     else if value == .background { store.stopLive(); AppDelegate.schedule() }

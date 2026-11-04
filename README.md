@@ -16,6 +16,8 @@ A shared home for plans, meals, bills, tasks, and groceries. Native SwiftUI for 
 
 The app uses warm sage accents, native typography, familiar iOS controls, and system light/dark appearance. There are no household user accounts. Pair each phone once with a short-lived code; its credential stays in Keychain.
 
+![Today screen with sample household data](docs/images/today-preview.png)
+
 ## Repository layout
 
 - `ios/Homebase.xcodeproj` — native iOS app, iOS 17+

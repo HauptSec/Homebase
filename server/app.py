@@ -13,7 +13,7 @@ from uuid import UUID
 
 from fastapi import Depends, FastAPI, HTTPException, Request, WebSocket, WebSocketDisconnect
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 DB_PATH = os.getenv("HOMEBASE_DB", "/data/homebase.sqlite")
 
@@ -107,6 +107,19 @@ class Item(BaseModel):
     revision: int = Field(default=0, ge=0)
     updatedAt: float = 0
     updatedBy: str = ''
+
+
+    @model_validator(mode='after')
+    def check_fields(self):
+        if not self.title.strip():
+            raise ValueError('Title cannot be blank')
+        if self.kind in ('event', 'dinner', 'bill') and self.date is None:
+            raise ValueError('This item requires a date')
+        if self.kind == 'event' and (self.endDate is None or self.endDate <= self.date):
+            raise ValueError('Event end must follow its start')
+        if any(len(value) > 300 for value in self.ingredients):
+            raise ValueError('Ingredient names must be at most 300 characters')
+        return self
 
 
 class Mutation(BaseModel):

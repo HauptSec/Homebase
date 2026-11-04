@@ -32,7 +32,7 @@ struct PairView: View {
                     }.padding(.vertical, 24).listRowBackground(Color.clear)
                 }
                 Section("Connect your home") {
-                    TextField("Server address", text: $store.endpoint).textInputAutocapitalization(.never).autocorrectionDisabled().keyboardType(.URL)
+                    TextField("Server address", text: $store.endpoint).disabled(store.paired).textInputAutocapitalization(.never).autocorrectionDisabled().keyboardType(.URL)
                     TextField("Device name", text: $name)
                     SecureField("One-time pairing code", text: $code).textInputAutocapitalization(.never).autocorrectionDisabled()
                     Button(busy ? "Connecting…" : "Make yourself at home") {
@@ -42,7 +42,7 @@ struct PairView: View {
                 }
                 if let message { Text(message).foregroundStyle(.red) }
                 Text("Pair once using a code from your home server. After that, just open Homebase.").font(.footnote).foregroundStyle(.secondary)
-            }.navigationTitle("Homebase")
+            }.scrollContentBackground(.hidden).background(Color("Canvas")).navigationTitle("Homebase")
         }
     }
 }
@@ -76,7 +76,7 @@ struct TodayView: View {
                         }
                     }
                 }
-            }.listStyle(.insetGrouped).navigationTitle("Homebase")
+            }.listStyle(.insetGrouped).scrollContentBackground(.hidden).background(Color("Canvas")).navigationTitle("Homebase")
                 .toolbar { ToolbarItem(placement: .topBarTrailing) { Menu { ForEach(Kind.allCases.filter { $0 != .meal }) { kind in Button(kind.title, systemImage: kind.symbol) { editing = Item(kind: kind) } } } label: { Image(systemName: "plus") } } }
                 .refreshable { await store.sync(); await CalendarBridge.shared.run(store: store) }
                 .sheet(item: $editing) { ItemEditor(item: $0) }
@@ -138,7 +138,7 @@ struct ItemList: View {
                     }
                 } else { rows(values) }
                 if values.isEmpty && kind != .dinner { ContentUnavailableView("Room for \(kind.title.lowercased())", systemImage: kind.symbol, description: Text("Tap + to add your first item.")) }
-            }.navigationTitle(kind.title).searchable(text: $search)
+            }.scrollContentBackground(.hidden).background(Color("Canvas")).navigationTitle(kind.title).searchable(text: $search)
                 .toolbar { ToolbarItem(placement: .topBarTrailing) { Button("Add", systemImage: "plus") { editing = Item(kind: kind) } } }
                 .refreshable { await store.sync(); if kind == .event { await CalendarBridge.shared.run(store: store) } }
                 .sheet(item: $editing) { ItemEditor(item: $0) }
@@ -167,7 +167,7 @@ struct MoreView: View {
                     NavigationLink { ItemList(kind: .meal) } label: { Label("Saved meals", systemImage: "book.closed") }
                 }
                 Section { NavigationLink { SettingsView() } label: { Label("Settings", systemImage: "gearshape") } }
-            }.navigationTitle("Household")
+            }.scrollContentBackground(.hidden).background(Color("Canvas")).navigationTitle("Household")
         }
     }
 }
@@ -184,7 +184,7 @@ struct ItemEditor: View {
     @State var ingredients = ""
     @State var added = false
     var valid: Bool {
-        !item.title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && (item.kind != .bill || (Decimal(string: amount).map { $0 >= 0 && $0 <= 1000000000 } ?? false) && item.currency.count == 3 && item.currency.allSatisfy { $0.isASCII && $0.isUppercase }) && (item.kind != .event || end > date)
+        !item.title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && item.title.count <= 300 && item.notes.count <= 10000 && ingredientLines.count <= 100 && ingredientLines.allSatisfy { $0.count <= 300 } && item.store.count <= 100 && item.quantity.count <= 100 && (item.kind != .bill || (Decimal(string: amount).map { $0 >= 0 && $0 <= 1000000000 } ?? false) && item.currency.count == 3 && item.currency.allSatisfy { $0.isASCII && $0.isUppercase }) && (item.kind != .event || end > date)
     }
     var body: some View {
         NavigationStack {
@@ -223,7 +223,7 @@ struct ItemEditor: View {
                 if item.revision > 0 && [.task, .bill, .grocery].contains(item.kind) {
                     Section { Button(item.kind == .bill ? "Mark paid" : item.done ? "Mark incomplete" : "Mark complete") { store.complete(item); dismiss() } }
                 }
-            }.navigationTitle(item.revision == 0 ? "Add \(item.kind == .grocery ? "grocery" : item.kind.rawValue)" : "Edit \(item.kind.rawValue)").navigationBarTitleDisplayMode(.inline)
+            }.scrollContentBackground(.hidden).background(Color("Canvas")).navigationTitle(item.revision == 0 ? "Add \(item.kind == .grocery ? "grocery" : item.kind.rawValue)" : "Edit \(item.kind.rawValue)").navigationBarTitleDisplayMode(.inline)
                 .toolbar {
                     ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() } }
                     ToolbarItem(placement: .confirmationAction) { Button("Save") { commit(); dismiss() }.disabled(!valid) }
@@ -255,13 +255,26 @@ struct ConflictsView: View {
             ForEach(store.cache.conflicts) { conflict in
                 Section(conflict.local.title) {
                     Text("This item changed on both phones. Choose which version to keep.").font(.subheadline)
-                    Text("Yours: \(conflict.local.title)\n\(conflict.local.notes)").foregroundStyle(.secondary)
-                    Text("Shared: \(conflict.remote.title)\n\(conflict.remote.notes)").foregroundStyle(.secondary)
+                    Text("Your version").font(.headline)
+                    conflictDetails(conflict.local)
+                    Text("Shared version").font(.headline)
+                    conflictDetails(conflict.remote)
                     Button("Keep my version") { store.resolve(conflict, keepMine: true) }
                     Button("Use shared version") { store.resolve(conflict, keepMine: false) }
                 }
             }
-        }.navigationTitle("Review changes")
+        }.scrollContentBackground(.hidden).background(Color("Canvas")).navigationTitle("Review changes")
+    }
+    @ViewBuilder func conflictDetails(_ item: Item) -> some View {
+        ItemRow(item: item)
+        if item.deleted { Text("Deleted").foregroundStyle(.red) }
+        Text(item.done ? "Completed" : "Open").font(.caption)
+        if let end = item.endDate { Text("Ends: \(Date(timeIntervalSince1970: end).formatted())").font(.caption) }
+        if let reminder = item.reminderAt { Text("Reminder: \(Date(timeIntervalSince1970: reminder).formatted())").font(.caption) }
+        if !item.store.isEmpty { Text("Store: \(item.store)").font(.caption) }
+        if item.recurrence != "none" { Text("Repeats \(item.recurrence)").font(.caption) }
+        if !item.ingredients.isEmpty { Text(item.ingredients.joined(separator: ", ")).font(.caption) }
+        if !item.notes.isEmpty { Text(item.notes).font(.caption) }
     }
 }
 struct SettingsView: View {
@@ -302,6 +315,6 @@ struct SettingsView: View {
             }
             Section { NavigationLink("Review sync conflicts") { ConflictsView() } }
             Section { Text("Homebase\nA shared place for everyday life.").foregroundStyle(.secondary) }
-        }.navigationTitle("Settings").sheet(isPresented: $repairing) { PairView() }
+        }.scrollContentBackground(.hidden).background(Color("Canvas")).navigationTitle("Settings").sheet(isPresented: $repairing) { PairView() }
     }
 }
