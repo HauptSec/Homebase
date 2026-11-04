@@ -32,4 +32,8 @@ jobs:
     runs-on: macos-15
     steps:
       - uses: actions/checkout@v4
+      - name: Verify US holiday dates
+        run: |
+          swiftc ios/Homebase/Models.swift ios/Homebase/Holidays.swift ios/Tests/HolidaysTests.swift -o /tmp/homebase-holiday-tests
+          /tmp/homebase-holiday-tests
       - run: xcodebuild -project ios/Homebase.xcodeproj -scheme Homebase -sdk iphonesimulator -configuration Debug CODE_SIGNING_ALLOWED=NO build

@@ -13,6 +13,7 @@
 		0000000000000000000000CB /* CalendarBridge.swift in Sources */ = {isa = PBXBuildFile; fileRef = 000000000000000000000067 /* CalendarBridge.swift */; };
 		0000000000000000000000CC /* Views.swift in Sources */ = {isa = PBXBuildFile; fileRef = 000000000000000000000068 /* Views.swift */; };
 		00000000000000000000012D /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 00000000000000000000012C /* Assets.xcassets */; };
+		0000000000000000000000CD /* Holidays.swift in Sources */ = {isa = PBXBuildFile; fileRef = 000000000000000000000069 /* Holidays.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -23,6 +24,7 @@
 		000000000000000000000067 /* CalendarBridge.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CalendarBridge.swift; sourceTree = "<group>"; };
 		000000000000000000000068 /* Views.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Views.swift; sourceTree = "<group>"; };
 		00000000000000000000012C /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
+		000000000000000000000069 /* Holidays.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Holidays.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -52,6 +54,7 @@
 				000000000000000000000066 /* Store.swift */,
 				000000000000000000000067 /* CalendarBridge.swift */,
 				000000000000000000000068 /* Views.swift */,
+				000000000000000000000069 /* Holidays.swift */,
 				00000000000000000000012C /* Assets.xcassets */,
 			);
 			path = Homebase;
@@ -132,6 +135,7 @@
 				0000000000000000000000CA /* Store.swift in Sources */,
 				0000000000000000000000CB /* CalendarBridge.swift in Sources */,
 				0000000000000000000000CC /* Views.swift in Sources */,
+				0000000000000000000000CD /* Holidays.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

@@ -57,3 +57,9 @@ Bills track payment dates, not bank transactions or historical amount changes. M
 ## Security reporting
 
 Do not post secrets or household data in public issues. Report security concerns privately through the repository owner's GitHub contact channels. Never commit `.env`, pairing codes, APNs keys, tunnel credentials, databases, backups, or device caches.
+
+### Automatic US holidays
+
+Calendar includes read-only, all-day US holidays for the previous year through two years ahead, rolling forward automatically. Dates are calculated offline in the phone’s time zone. All 11 nationwide federal holidays are included, with separate Friday/Monday observed dates when fixed holidays fall on weekends, following [OPM’s federal holiday rules](https://www.opm.gov/policy-data-oversight/pay-leave/federal-holidays/). Regional holidays and one-off executive closures are not included.
+
+Common observances include Valentine’s Day, St. Patrick’s Day, Good Friday, Western Easter, Earth Day, Cinco de Mayo, Mother’s Day, Flag Day, Father’s Day, Patriot Day, Halloween, Black Friday, Christmas Eve, and New Year’s Eve. These are labeled separately from federal holidays. Holidays appear on Today only on their date. They are a built-in Homebase calendar layer, not exported to the shared iCloud calendar, and do not create household change notifications or reminders.

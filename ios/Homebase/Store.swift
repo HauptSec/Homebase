@@ -63,7 +63,7 @@ enum Keychain {
             catch { cacheHealthy = false; self.error = "The local cache could not be read. It has been preserved; do not reinstall if you have unsynced edits." }
         }
     }
-    var items: [Item] { cache.items.filter { !$0.deleted } }
+    var items: [Item] { cache.items.filter { !$0.deleted } + USHolidays.currentEvents() }
     func items(_ kind: Kind) -> [Item] {
         items.filter { $0.kind == kind }.sorted {
             if $0.done != $1.done { return !$0.done }
@@ -85,6 +85,7 @@ enum Keychain {
         else { cache.items.append(item) }
     }
     func save(_ item: Item) {
+        guard !item.isHoliday else { return }
         guard cacheHealthy else { return }
         upsert(item)
         // Queue every edit; never change an in-flight request's idempotency key or body.

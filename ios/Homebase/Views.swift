@@ -49,7 +49,13 @@ struct PairView: View {
 struct TodayView: View {
     @EnvironmentObject var store: Store
     @State var editing: Item?
-    var today: [Item] { store.items.filter { !$0.done && $0.kind != .meal && $0.kind != .grocery && ($0.when.map { Calendar.current.isDateInToday($0) || $0 < Date() } ?? false) }.sorted { ($0.date ?? 0) < ($1.date ?? 0) } }
+    var today: [Item] {
+        store.items.filter { item in
+            guard !item.done, item.kind != .meal, item.kind != .grocery, let when = item.when else { return false }
+            if item.isHoliday { return Calendar.current.isDateInToday(when) }
+            return Calendar.current.isDateInToday(when) || when < Date()
+        }.sorted { ($0.date ?? 0) < ($1.date ?? 0) }
+    }
     var body: some View {
         NavigationStack {
             List {
@@ -70,7 +76,10 @@ struct TodayView: View {
                 }
                 Section("Today & overdue") {
                     if today.isEmpty { ContentUnavailableView("Nothing pressing", systemImage: "sun.horizon", description: Text("Add a plan or enjoy a clear day.")) }
-                    ForEach(today) { item in Button { editing = item } label: { ItemRow(item: item) }.buttonStyle(.plain) }
+                    ForEach(today) { item in
+                        if item.isHoliday { ItemRow(item: item) }
+                        else { Button { editing = item } label: { ItemRow(item: item) }.buttonStyle(.plain) }
+                    }
                 }
                 Section("Your household") {
                     ForEach([Kind.task, .bill, .grocery]) { kind in
@@ -93,7 +102,8 @@ struct ItemRow: View {
             Image(systemName: item.done ? "checkmark.circle.fill" : item.kind.symbol).font(.title3).foregroundStyle(item.done ? Color.secondary : Color.accentColor).frame(width: 26)
             VStack(alignment: .leading, spacing: 5) {
                 Text(item.title).strikethrough(item.done).foregroundStyle(item.done ? .secondary : .primary)
-                if let when = item.when { Text(when, format: item.kind == .event ? .dateTime.month(.abbreviated).day().hour().minute() : .dateTime.month(.abbreviated).day()).font(.caption).foregroundStyle(.secondary) }
+                if let when = item.when { Text(when, format: item.kind == .event && !item.allDay ? .dateTime.year().month(.abbreviated).day().hour().minute() : .dateTime.year().month(.abbreviated).day()).font(.caption).foregroundStyle(.secondary) }
+                if item.allDay { Text("All day").font(.caption).foregroundStyle(.secondary) }
                 if !item.quantity.isEmpty { Text(item.quantity).font(.caption).foregroundStyle(.secondary) }
                 if !item.notes.isEmpty { Text(item.notes).font(.caption).foregroundStyle(.secondary).lineLimit(1) }
             }
@@ -119,6 +129,9 @@ struct ItemList: View {
     var body: some View {
         NavigationStack {
             List {
+                if kind == .event {
+                    Text("US federal holidays and common observances are included automatically. Holidays are read-only and available offline.").font(.footnote).foregroundStyle(.secondary)
+                }
                 if kind == .dinner {
                     Section {
                         HStack {
@@ -149,11 +162,13 @@ struct ItemList: View {
     }
     @ViewBuilder func rows(_ items: [Item]) -> some View {
         ForEach(items) { item in
+            if item.isHoliday { ItemRow(item: item) } else {
             Button { editing = item } label: { ItemRow(item: item) }.buttonStyle(.plain)
                 .swipeActions(edge: .trailing) { Button("Delete", role: .destructive) { store.remove(item) } }
                 .swipeActions(edge: .leading) {
                     if kind == .task || kind == .bill || kind == .grocery { Button(kind == .bill ? "Paid" : item.done ? "Reopen" : "Done") { store.complete(item) }.tint(.accentColor) }
                 }
+            }
         }
     }
 }
