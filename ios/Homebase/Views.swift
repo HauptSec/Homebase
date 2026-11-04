@@ -216,7 +216,7 @@ struct ItemEditor: View {
                     if item.kind == .bill { TextField("Amount", text: $amount).keyboardType(.decimalPad); TextField("Currency", text: $item.currency).textInputAutocapitalization(.characters) }
                     if item.kind != .meal && item.kind != .grocery {
                         if item.kind == .task { Toggle("Set a date", isOn: $hasDate) }
-                        if hasDate || item.kind != .task { DatePicker(item.kind == .bill ? "Due" : "Date", selection: $date, displayedComponents: item.kind == .event || item.kind == .task ? [.date, .hourAndMinute] : [.date]) }
+                        if hasDate || item.kind != .task { DatePicker(item.kind == .bill ? "Due" : "Date", selection: startSelection, displayedComponents: item.kind == .event || item.kind == .task ? [.date, .hourAndMinute] : [.date]) }
                         if item.kind == .event { Toggle("All-day event", isOn: $item.allDay); DatePicker("Ends", selection: $end) }
                     }
                 }
@@ -253,6 +253,17 @@ struct ItemEditor: View {
                     ingredients = item.ingredients.joined(separator: "\n")
                 }
         }
+    }
+    // Only picker edits reset the duration; loading an existing event preserves its saved end.
+    var startSelection: Binding<Date> {
+        Binding(get: { date }, set: { newStart in
+            if item.kind == .event {
+                end = item.allDay
+                    ? Calendar.current.date(byAdding: .day, value: 1, to: newStart)!
+                    : newStart.addingTimeInterval(3600)
+            }
+            date = newStart
+        })
     }
     var ingredientLines: [String] { ingredients.split(separator: "\n").map { $0.trimmingCharacters(in: .whitespaces) }.filter { !$0.isEmpty } }
     func commit() {
