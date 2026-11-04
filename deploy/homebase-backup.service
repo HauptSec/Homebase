@@ -1,0 +1,6 @@
+[Unit]
+Description=Back up Homebase database
+[Service]
+Type=oneshot
+WorkingDirectory=%h/homebase
+ExecStart=%h/homebase/deploy/backup.sh

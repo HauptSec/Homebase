@@ -1,0 +1,5 @@
+[Unit]
+Description=Deploy verified Homebase commits
+[Service]
+Type=oneshot
+ExecStart=%h/homebase/deploy/auto-deploy.sh
