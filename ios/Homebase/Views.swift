@@ -324,7 +324,16 @@ struct SettingsView: View {
             Section("App updates") {
                 LabeledContent("Installed", value: "\(Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "1.0") (\(store.installedBuild))")
                 if !store.releaseStatus.isEmpty { Text(store.releaseStatus).font(.subheadline) }
-                Button("Check for updates") { Task { await store.checkForUpdate() } }
+                Button { Task { await store.checkForUpdate() } } label: {
+                    HStack {
+                        Text(store.checkingForUpdate ? "Checking…" : "Check for updates")
+                        if store.checkingForUpdate { Spacer(); ProgressView() }
+                    }
+                }.disabled(store.checkingForUpdate)
+                if let checkedAt = store.releaseCheckedAt {
+                    Text("Last checked \(checkedAt.formatted(date: .abbreviated, time: .standard))")
+                        .font(.caption).foregroundStyle(.secondary)
+                }
                 if let release = store.appRelease {
                     if store.updateAvailable {
                         Text(release.notes).font(.footnote).foregroundStyle(.secondary)

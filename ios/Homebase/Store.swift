@@ -34,6 +34,8 @@ enum Keychain {
     @Published var syncing = false
     @Published var appRelease: AppRelease?
     @Published var releaseStatus = ""
+    @Published var checkingForUpdate = false
+    @Published var releaseCheckedAt: Date?
     private var lastReleaseCheck = Date.distantPast
     @Published var endpoint = UserDefaults.standard.string(forKey: "endpoint") ?? "https://homebase.hauptsec.xyz"
     private var liveTask: Task<Void, Never>?
@@ -197,14 +199,28 @@ enum Keychain {
     var installedBuild: Int { Int(Bundle.main.infoDictionary?["CFBundleVersion"] as? String ?? "0") ?? 0 }
     var updateAvailable: Bool { (appRelease?.build ?? 0) > installedBuild }
     func checkForUpdate() async {
-        guard paired, !demo else { return }
+        guard !checkingForUpdate else { return }
+        guard paired else { releaseStatus = "Pair this phone before checking for updates."; return }
+        guard !demo else { releaseStatus = "Updates are unavailable in preview mode."; return }
+        checkingForUpdate = true
+        releaseStatus = "Checking for updates…"
+        defer { checkingForUpdate = false }
         do {
-            let (data, response) = try await URLSession.shared.data(for: request("/v1/releases/latest"))
+            var updateRequest = try request("/v1/releases/latest")
+            updateRequest.cachePolicy = .reloadIgnoringLocalCacheData
+            let (data, response) = try await URLSession.shared.data(for: updateRequest)
             try checked(response)
             appRelease = try decoder.decode(ReleaseEnvelope.self, from: data).release
             lastReleaseCheck = Date()
-            releaseStatus = updateAvailable ? "An update is ready" : "You’re up to date"
-        } catch { releaseStatus = "Could not check for updates. Try again when connected." }
+            releaseCheckedAt = lastReleaseCheck
+            if let release = appRelease {
+                releaseStatus = updateAvailable
+                    ? "Build \(release.build) is ready to install"
+                    : "You have the latest published build (\(installedBuild))."
+            } else {
+                releaseStatus = "No installable release is currently published."
+            }
+        } catch { releaseStatus = "Could not check for updates: \(error.localizedDescription)" }
     }
     func openInstallPage() async {
         guard cache.queue.isEmpty, cache.conflicts.isEmpty else {
