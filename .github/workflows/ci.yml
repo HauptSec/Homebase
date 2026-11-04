@@ -23,7 +23,7 @@ jobs:
       - name: Verify unprivileged container startup
         run: |
           docker run -d --name homebase-smoke --read-only --tmpfs /tmp --tmpfs /data:uid=10001,gid=10001 --cap-drop ALL -p 127.0.0.1:8092:8080 homebase:test
-          curl --fail --retry 12 --retry-connrefused --retry-delay 2 http://127.0.0.1:8092/health
+          curl --fail --max-time 5 --retry 12 --retry-all-errors --retry-delay 2 http://127.0.0.1:8092/health
           test "$(curl --silent -o /dev/null -w '%{http_code}' http://127.0.0.1:8092/v1/sync)" = 401
       - name: Container diagnostics
         if: always()
