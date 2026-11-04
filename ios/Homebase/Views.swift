@@ -117,12 +117,25 @@ struct ItemList: View {
     let kind: Kind
     @State var editing: Item?
     @State var search = ""
+    @State private var showHistory = false
+    @State private var calendarToday = Calendar.current.startOfDay(for: Date())
     @State var week = Calendar.current.dateInterval(of: .weekOfYear, for: Date())!.start
     var values: [Item] {
         store.items(kind).filter { item in
             let match = search.isEmpty || item.title.localizedCaseInsensitiveContains(search) || item.notes.localizedCaseInsensitiveContains(search)
+            if kind == .event {
+                guard let start = item.when else { return false }
+                // End dates are exclusive; a multi-day event remains visible through its final day.
+                let isPast = start < calendarToday && (item.endDate.map { Date(timeIntervalSince1970: $0) <= calendarToday } ?? true)
+                return match && (showHistory ? isPast : !isPast)
+            }
             if kind == .dinner { return match && (item.when.map { $0 >= week && $0 < Calendar.current.date(byAdding: .day, value: 7, to: week)! } ?? false) }
             return match
+        }.sorted {
+            if kind == .event && showHistory { return ($0.date ?? 0) > ($1.date ?? 0) }
+            if $0.done != $1.done { return !$0.done }
+            if kind == .grocery { return $0.title.localizedStandardCompare($1.title) == .orderedAscending }
+            return ($0.date ?? .greatestFiniteMagnitude) < ($1.date ?? .greatestFiniteMagnitude)
         }
     }
     var stores: [String] { Array(Set(values.map { $0.store.trimmingCharacters(in: .whitespaces) })).sorted { a, b in a.isEmpty || (!b.isEmpty && a.localizedStandardCompare(b) == .orderedAscending) } }
@@ -130,6 +143,10 @@ struct ItemList: View {
         NavigationStack {
             List {
                 if kind == .event {
+                    Picker("Calendar range", selection: $showHistory) {
+                        Text("Today & upcoming").tag(false)
+                        Text("History").tag(true)
+                    }.pickerStyle(.segmented)
                     Text("US federal holidays and common observances are included automatically. Holidays are read-only and available offline.").font(.footnote).foregroundStyle(.secondary)
                 }
                 if kind == .dinner {
@@ -153,9 +170,18 @@ struct ItemList: View {
                         }
                     }
                 } else { rows(values) }
-                if values.isEmpty && kind != .dinner { ContentUnavailableView("Room for \(kind.title.lowercased())", systemImage: kind.symbol, description: Text("Tap + to add your first item.")) }
+                if values.isEmpty && kind == .event {
+                    ContentUnavailableView(search.isEmpty ? (showHistory ? "No past events" : "No upcoming events") : "No matching events", systemImage: "calendar", description: Text(search.isEmpty ? (showHistory ? "Past events will appear here, newest first." : "Tap + to add an event.") : "Try a different search or calendar range."))
+                } else if values.isEmpty && kind != .dinner { ContentUnavailableView("Room for \(kind.title.lowercased())", systemImage: kind.symbol, description: Text("Tap + to add your first item.")) }
             }.scrollContentBackground(.hidden).background(Color("Canvas")).navigationTitle(kind.title).searchable(text: $search)
                 .toolbar { ToolbarItem(placement: .topBarTrailing) { Button("Add", systemImage: "plus") { editing = Item(kind: kind) } } }
+                .onAppear { calendarToday = Calendar.current.startOfDay(for: Date()) }
+                .onReceive(NotificationCenter.default.publisher(for: UIApplication.significantTimeChangeNotification)) { _ in
+                    calendarToday = Calendar.current.startOfDay(for: Date())
+                }
+                .onReceive(NotificationCenter.default.publisher(for: UIApplication.didBecomeActiveNotification)) { _ in
+                    calendarToday = Calendar.current.startOfDay(for: Date())
+                }
                 .refreshable { await store.sync(); if kind == .event { await CalendarBridge.shared.run(store: store) } }
                 .sheet(item: $editing) { ItemEditor(item: $0) }
         }
