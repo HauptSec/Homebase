@@ -20,3 +20,8 @@ xcuserdata/
 .DS_Store
 
 private-backups/
+
+releases/
+*.ipa
+*.xcarchive/
+*.mobileprovision

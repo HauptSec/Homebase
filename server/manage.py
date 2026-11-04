@@ -11,6 +11,10 @@ parser = argparse.ArgumentParser()
 sub = parser.add_subparsers(dest='command', required=True)
 sub.add_parser('invite')
 sub.add_parser('devices')
+sub.add_parser('install-link')
+sub.add_parser('release-info')
+release = sub.add_parser('publish-release')
+release.add_argument('build', type=int)
 revoke = sub.add_parser('revoke')
 revoke.add_argument('device_id')
 backup = sub.add_parser('backup')
@@ -36,3 +40,15 @@ elif args.command == 'backup':
         source.backup(target)
     Path(args.destination).chmod(0o600)
     print('Backup complete.')
+
+elif args.command == 'install-link':
+    from server.releases import issue_ticket
+    print(issue_ticket()['url'])
+elif args.command == 'release-info':
+    from server.releases import latest
+    release = latest()
+    print(release.model_dump_json() if release else 'null')
+elif args.command == 'publish-release':
+    from server.releases import publish
+    publish(args.build)
+    print('Release published; update notifications queued.')

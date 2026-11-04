@@ -62,6 +62,9 @@ struct TodayView: View {
                         if !store.cache.queue.isEmpty { Text("\(store.cache.queue.count) changes saved on this phone").font(.caption).foregroundStyle(.orange) }
                     }.padding(.vertical, 18)
                 }.listRowBackground(Color.clear)
+                if store.updateAvailable {
+                    Section { Button { Task { await store.openInstallPage() } } label: { Label("Homebase update available", systemImage: "arrow.down.app") } }
+                }
                 if !store.cache.conflicts.isEmpty {
                     Section { NavigationLink { ConflictsView() } label: { Label("Review shared changes", systemImage: "exclamationmark.arrow.triangle.2.circlepath") } }
                 }
@@ -291,6 +294,19 @@ struct SettingsView: View {
                 Button("Enable notifications") { Task { await store.registerPush() } }
                 Button("Pair this phone again") { repairing = true }
                 if let error = store.error { Text(error).font(.caption).foregroundStyle(.secondary) }
+            }
+            Section("App updates") {
+                LabeledContent("Installed", value: "\(Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "1.0") (\(store.installedBuild))")
+                if !store.releaseStatus.isEmpty { Text(store.releaseStatus).font(.subheadline) }
+                Button("Check for updates") { Task { await store.checkForUpdate() } }
+                if let release = store.appRelease {
+                    if store.updateAvailable {
+                        Text(release.notes).font(.footnote).foregroundStyle(.secondary)
+                        Button("Install update in Safari", systemImage: "arrow.down.app") { Task { await store.openInstallPage() } }.disabled(!store.cache.queue.isEmpty || !store.cache.conflicts.isEmpty)
+                    }
+                    Text("Latest release signing expires \(Date(timeIntervalSince1970: release.expiresAt).formatted(date: .abbreviated, time: .omitted)).").font(.caption).foregroundStyle(.secondary)
+                }
+                Text("Updates install over the existing app. Sync your edits first, then confirm installation in Safari.").font(.caption).foregroundStyle(.secondary)
             }
             Section("Shared iCloud calendar") {
                 Text("Choose your shared iCloud calendar on one phone. Keep the bridge on that phone; both phones see its synced events in Homebase.").font(.footnote)

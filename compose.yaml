@@ -8,6 +8,7 @@ services:
     volumes:
       - homebase-data:/data
       - homebase-backups:/backups
+      - ./releases:/releases:ro
       - ./secrets/apns.p8:/run/secrets/apns.p8:ro
     env_file:
       - path: .env

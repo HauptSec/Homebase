@@ -44,6 +44,8 @@ def initialize():
         CREATE TABLE IF NOT EXISTS mutations(device_id TEXT NOT NULL,mutation_id TEXT NOT NULL,result TEXT NOT NULL,PRIMARY KEY(device_id,mutation_id));
         CREATE TABLE IF NOT EXISTS notifications(id INTEGER PRIMARY KEY AUTOINCREMENT,device_id TEXT NOT NULL,body TEXT NOT NULL,attempts INTEGER NOT NULL DEFAULT 0,next_attempt REAL NOT NULL DEFAULT 0);
         CREATE TABLE IF NOT EXISTS reminders(item_id TEXT NOT NULL,reminder_at REAL NOT NULL,PRIMARY KEY(item_id,reminder_at));
+        CREATE TABLE IF NOT EXISTS app_releases(build INTEGER PRIMARY KEY,metadata TEXT NOT NULL,published REAL NOT NULL);
+        CREATE TABLE IF NOT EXISTS install_tickets(hash TEXT PRIMARY KEY,build INTEGER NOT NULL,expires REAL NOT NULL,device_id TEXT);
         CREATE TABLE IF NOT EXISTS calendar_bridge(singleton INTEGER PRIMARY KEY CHECK(singleton=1),device_id TEXT NOT NULL);
         CREATE TABLE IF NOT EXISTS rate_limits(bucket TEXT PRIMARY KEY,starts REAL NOT NULL,count INTEGER NOT NULL);
         ''')
@@ -149,6 +151,15 @@ async def notification_worker():
         try:
             from server.push import deliver
             with db() as c:
+                release_row = c.execute('SELECT metadata FROM app_releases ORDER BY build DESC LIMIT 1').fetchone()
+                if release_row:
+                    release = json.loads(release_row['metadata'])
+                    remaining = release['expiresAt'] - time.time()
+                    threshold = next((days for days in (1, 7, 30) if remaining <= days * 86400), None)
+                    if threshold is not None:
+                        warning_id = f"app-release:{release['build']}:{threshold}"
+                        if c.execute('INSERT OR IGNORE INTO reminders VALUES(?,?)', (warning_id, release['expiresAt'])).rowcount:
+                            enqueue(c, '', {'aps': {'alert': {'title': 'Homebase signing renewal', 'body': 'The current iOS release needs renewed signing soon. Check the Mac release job before it expires.'}, 'sound': 'default'}})
                 for row in c.execute("SELECT body FROM items").fetchall():
                     item = json.loads(row['body'])
                     due = item.get('reminderAt')
@@ -307,3 +318,7 @@ def release_calendar(actor=Depends(device)):
     with db() as c:
         c.execute('DELETE FROM calendar_bridge WHERE device_id=?', (actor['id'],))
     return {'ok': True}
+
+
+from server.releases import router as release_router
+app.include_router(release_router)

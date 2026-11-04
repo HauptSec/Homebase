@@ -63,3 +63,12 @@ struct Cache: Codable {
     var conflicts: [Conflict] = []
     var cursor = 0
 }
+
+struct AppRelease: Codable {
+    let build: Int
+    let version: String
+    let notes: String
+    let expiresAt: Double
+}
+struct ReleaseEnvelope: Codable { let release: AppRelease? }
+struct InstallLink: Codable { let url: String; let expiresAt: Double }

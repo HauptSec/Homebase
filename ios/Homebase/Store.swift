@@ -32,6 +32,9 @@ enum Keychain {
     @Published var status = "Ready"
     @Published var error: String?
     @Published var syncing = false
+    @Published var appRelease: AppRelease?
+    @Published var releaseStatus = ""
+    private var lastReleaseCheck = Date.distantPast
     @Published var endpoint = UserDefaults.standard.string(forKey: "endpoint") ?? "https://homebase.hauptsec.xyz"
     private var liveTask: Task<Void, Never>?
     private var socket: URLSessionWebSocketTask?
@@ -156,6 +159,7 @@ enum Keychain {
                 cache.cursor = page.cursor; more = page.hasMore
                 guard persist() else { return }
             }
+            if Date().timeIntervalSince(lastReleaseCheck) > 300 { await checkForUpdate() }
             status = cache.conflicts.isEmpty ? "Up to date" : "Changes need review"
         } catch { status = "Offline · \(cache.queue.count) pending"; self.error = error.localizedDescription }
     }
@@ -189,6 +193,30 @@ enum Keychain {
         }
     }
     func stopLive() { liveTask?.cancel(); liveTask = nil; socket?.cancel(with: .goingAway, reason: nil); socket = nil }
+    var installedBuild: Int { Int(Bundle.main.infoDictionary?["CFBundleVersion"] as? String ?? "0") ?? 0 }
+    var updateAvailable: Bool { (appRelease?.build ?? 0) > installedBuild }
+    func checkForUpdate() async {
+        guard paired, !demo else { return }
+        do {
+            let (data, response) = try await URLSession.shared.data(for: request("/v1/releases/latest"))
+            try checked(response)
+            appRelease = try decoder.decode(ReleaseEnvelope.self, from: data).release
+            lastReleaseCheck = Date()
+            releaseStatus = updateAvailable ? "An update is ready" : "You’re up to date"
+        } catch { releaseStatus = "Could not check for updates. Try again when connected." }
+    }
+    func openInstallPage() async {
+        guard cache.queue.isEmpty, cache.conflicts.isEmpty else {
+            releaseStatus = "Sync pending edits and resolve conflicts before installing."; return
+        }
+        do {
+            let (data, response) = try await URLSession.shared.data(for: request("/v1/releases/link", method: "POST", body: Data("{}".utf8)))
+            try checked(response)
+            let link = try decoder.decode(InstallLink.self, from: data)
+            guard let url = URL(string: link.url), let server = URL(string: endpoint), url.scheme == "https", url.host == server.host, url.path == "/install" else { throw APIError(message: "Unexpected installation address") }
+            await UIApplication.shared.open(url)
+        } catch { releaseStatus = error.localizedDescription }
+    }
     func registerPush() async {
         guard !demo else { return }
         do {

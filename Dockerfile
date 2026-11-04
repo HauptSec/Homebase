@@ -6,4 +6,4 @@ RUN pip install --no-cache-dir -r server/requirements.txt && useradd --uid 10001
 COPY --chown=homebase:homebase server server
 USER homebase
 EXPOSE 8080
-CMD ["uvicorn", "server.app:app", "--host", "0.0.0.0", "--port", "8080", "--no-proxy-headers", "--ws-max-size", "131072", "--limit-concurrency", "100"]
+CMD ["uvicorn", "server.app:app", "--host", "0.0.0.0", "--port", "8080", "--no-proxy-headers", "--no-access-log", "--ws-max-size", "131072", "--limit-concurrency", "100"]

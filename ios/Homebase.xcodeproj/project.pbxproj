@@ -167,6 +167,8 @@
 				CODE_SIGN_ENTITLEMENTS = Homebase/Homebase.entitlements;
 				CODE_SIGN_STYLE = Automatic;
 				DEVELOPMENT_TEAM = BH744E96JG;
+				CURRENT_PROJECT_VERSION = 2;
+				MARKETING_VERSION = 1.0;
 				INFOPLIST_FILE = Homebase/Info.plist;
 				PRODUCT_BUNDLE_IDENTIFIER = xyz.hauptsec.homebase;
 				PRODUCT_NAME = "$(TARGET_NAME)";
@@ -186,6 +188,8 @@
 				CODE_SIGN_ENTITLEMENTS = Homebase/Homebase.entitlements;
 				CODE_SIGN_STYLE = Automatic;
 				DEVELOPMENT_TEAM = BH744E96JG;
+				CURRENT_PROJECT_VERSION = 2;
+				MARKETING_VERSION = 1.0;
 				INFOPLIST_FILE = Homebase/Info.plist;
 				PRODUCT_BUNDLE_IDENTIFIER = xyz.hauptsec.homebase;
 				PRODUCT_NAME = "$(TARGET_NAME)";

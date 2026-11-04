@@ -24,6 +24,7 @@ The app uses warm sage accents, native typography, familiar iOS controls, and sy
 - `server/` — FastAPI, SQLite, APNs worker, local administration CLI
 - `compose.yaml` — API and optional Cloudflare Tunnel
 - `deploy/` — systemd user timers and deployment/backup scripts
+- [Private wireless iOS updates](docs/AD_HOC_UPDATES.md) — installation, automatic builds, and signing renewal
 - [Setup guide](docs/SETUP.md) — Cloudflare, Apple signing, push, pairing, recovery
 - [Architecture and boundaries](docs/ARCHITECTURE.md)
 

@@ -17,6 +17,8 @@ main() {
     return 0
   fi
   git reset --quiet --hard "$target"
+  mkdir -p releases
+  chmod 755 releases
   mkdir -p secrets
   chmod 700 secrets
   if [[ ! -e secrets/apns.p8 ]]; then touch secrets/apns.p8; chmod 644 secrets/apns.p8; fi
