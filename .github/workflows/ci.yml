@@ -36,4 +36,8 @@ jobs:
         run: |
           swiftc ios/Homebase/Models.swift ios/Homebase/Holidays.swift ios/Tests/HolidaysTests.swift -o /tmp/homebase-holiday-tests
           /tmp/homebase-holiday-tests
+      - name: Verify budget compatibility and recurrence
+        run: |
+          swiftc ios/Homebase/Models.swift ios/Tests/BudgetTests.swift -o /tmp/homebase-budget-tests
+          /tmp/homebase-budget-tests
       - run: xcodebuild -project ios/Homebase.xcodeproj -scheme Homebase -sdk iphonesimulator -configuration Debug CODE_SIGNING_ALLOWED=NO build

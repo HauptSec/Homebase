@@ -67,6 +67,45 @@ class APITests(unittest.TestCase):
         self.assertEqual(self.client.post('/v1/mutations', headers=self.a, json=data).status_code, 422)
         self.assertEqual(self.client.get('/v1/sync?after=-1', headers=self.a).status_code, 422)
 
+    def test_budget_income_and_legacy_edits(self):
+        data = self.mutation(kind='bill', title='Paycheck', date=1793811600,
+                             budgetType='income', amountCents=250000, recurrence='biweekly')
+        response = self.client.post('/v1/mutations', headers=self.a, json=data)
+        self.assertEqual(response.status_code, 200)
+        income = response.json()['item']
+        self.assertEqual(income['budgetType'], 'income')
+        self.assertEqual(income['recurrence'], 'biweekly')
+        income.pop('budgetType')  # Simulate an older app saving an unrelated edit.
+        income['notes'] = 'Updated note'
+        response = self.client.post('/v1/mutations', headers=self.b, json={
+            'mutationId': str(uuid4()), 'baseRevision': 1, 'item': income})
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json()['item']['budgetType'], 'income')
+        invalid = self.mutation(kind='bill', date=1793811600, budgetType='transfer')
+        self.assertEqual(self.client.post('/v1/mutations', headers=self.a, json=invalid).status_code, 422)
+
+    def test_meal_steps_sync_and_legacy_edit(self):
+        data = self.mutation(kind='dinner', title='Roast chicken', date=1793811600,
+                             ingredients=['Chicken', 'Salt'], prepSteps=['Season chicken'],
+                             cookingSteps=['Roast until cooked', 'Rest before serving'])
+        response = self.client.post('/v1/mutations', headers=self.a, json=data)
+        self.assertEqual(response.status_code, 200)
+        meal = response.json()['item']
+        synced = self.client.get('/v1/sync', headers=self.b).json()['items'][-1]
+        self.assertEqual(synced['cookingSteps'], data['item']['cookingSteps'])
+        meal.pop('prepSteps'); meal.pop('cookingSteps')
+        response = self.client.post('/v1/mutations', headers=self.b, json={
+            'mutationId': str(uuid4()), 'baseRevision': 1, 'item': meal})
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json()['item']['prepSteps'], ['Season chicken'])
+        self.assertEqual(response.json()['item']['cookingSteps'], data['item']['cookingSteps'])
+        meal = response.json()['item']; meal['prepSteps'] = []; meal['cookingSteps'] = []
+        response = self.client.post('/v1/mutations', headers=self.a, json={
+            'mutationId': str(uuid4()), 'baseRevision': 2, 'item': meal})
+        self.assertEqual(response.json()['item']['cookingSteps'], [])
+        invalid = self.mutation(kind='meal', prepSteps=['x' * 301])
+        self.assertEqual(self.client.post('/v1/mutations', headers=self.a, json=invalid).status_code, 422)
+
     def test_push_only_to_other_device(self):
         self.client.post('/v1/push', headers=self.a, json={'token': 'a'*64})
         self.client.post('/v1/push', headers=self.b, json={'token': 'b'*64})

@@ -63,3 +63,11 @@ Do not post secrets or household data in public issues. Report security concerns
 Calendar includes read-only, all-day US holidays for the previous year through two years ahead, rolling forward automatically. Dates are calculated offline in the phone’s time zone. All 11 nationwide federal holidays are included, with separate Friday/Monday observed dates when fixed holidays fall on weekends, following [OPM’s federal holiday rules](https://www.opm.gov/policy-data-oversight/pay-leave/federal-holidays/). Regional holidays and one-off executive closures are not included.
 
 Common observances include Valentine’s Day, St. Patrick’s Day, Good Friday, Western Easter, Earth Day, Cinco de Mayo, Mother’s Day, Flag Day, Father’s Day, Patriot Day, Halloween, Black Friday, Christmas Eve, and New Year’s Eve. These are labeled separately from federal holidays. Holidays appear on Today only on their date. They are a built-in Homebase calendar layer, not exported to the shared iCloud calendar, and do not create household change notifications or reminders.
+
+### Simple Budget
+
+Household → Budget tracks income and expenses with an amount, currency, date, optional reminder, and one-time/weekly/every-two-weeks/monthly/yearly recurrence. Existing bills remain expenses. Upcoming includes unpaid/unreceived overdue entries; completing an entry records the actual completion date and advances recurring entries once. Completed one-time entries remain accessible. Each repeating entry shows its next outstanding occurrence, rather than a projected ledger or bank balance. All phones should install the Budget update before using income or every-two-weeks recurrence.
+
+### Dinner instructions
+
+Dinner plans and saved meals have individual rows for Ingredients, Prep, and Cooking. Each section starts with one line; use + to append another and the minus button to remove a line. Blank rows are omitted when saving. Saved-meal selection and saving dinner favorites copy all three sections; adding groceries copies only ingredients. Existing meals and older offline caches remain compatible.

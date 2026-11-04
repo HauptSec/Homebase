@@ -98,10 +98,13 @@ class Item(BaseModel):
     store: str = Field(default='', max_length=100)
     calendarKey: str = Field(default='', max_length=1000)
     quantity: str = Field(default='', max_length=100)
+    budgetType: Literal['expense', 'income'] | None = None
     amountCents: int | None = Field(default=None, ge=0, le=100000000000)
     currency: str = Field(default='USD', pattern='^[A-Z]{3}$')
-    recurrence: Literal['none', 'weekly', 'monthly', 'yearly'] = 'none'
+    recurrence: Literal['none', 'weekly', 'biweekly', 'monthly', 'yearly'] = 'none'
     ingredients: list[str] = Field(default_factory=list, max_length=100)
+    prepSteps: list[str] = Field(default_factory=list, max_length=100)
+    cookingSteps: list[str] = Field(default_factory=list, max_length=100)
     paidDates: list[float] = Field(default_factory=list, max_length=10000)
     allDay: bool = False
     done: bool = False
@@ -121,6 +124,8 @@ class Item(BaseModel):
             raise ValueError('Event end must follow its start')
         if any(len(value) > 300 for value in self.ingredients):
             raise ValueError('Ingredient names must be at most 300 characters')
+        if any(len(value) > 300 for value in self.prepSteps + self.cookingSteps):
+            raise ValueError('Prep and cooking steps must be at most 300 characters')
         return self
 
 
@@ -261,6 +266,12 @@ def mutate(payload: Mutation, actor=Depends(device)):
         if current and json.loads(current['body'])['kind'] != payload.item.kind:
             raise HTTPException(422, 'Item type cannot change')
         item = payload.item.model_dump(mode='json')
+        # Preserve newly added fields when older clients save unrelated edits.
+        if current:
+            previous_item = json.loads(current['body'])
+            for field in ('budgetType', 'prepSteps', 'cookingSteps'):
+                if field not in payload.item.model_fields_set and field in previous_item:
+                    item[field] = previous_item[field]
         item.update(revision=revision + 1, updatedAt=time.time(), updatedBy=actor['id'])
         body = json.dumps(item)
         c.execute('INSERT OR REPLACE INTO items VALUES(?,?,?)', (item['id'], item['revision'], body))

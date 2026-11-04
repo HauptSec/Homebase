@@ -103,12 +103,18 @@ struct ItemRow: View {
             VStack(alignment: .leading, spacing: 5) {
                 Text(item.title).strikethrough(item.done).foregroundStyle(item.done ? .secondary : .primary)
                 if let when = item.when { Text(when, format: item.kind == .event && !item.allDay ? .dateTime.year().month(.abbreviated).day().hour().minute() : .dateTime.year().month(.abbreviated).day()).font(.caption).foregroundStyle(.secondary) }
+                if item.kind == .bill { Text("\(item.isIncome ? "Income" : "Expense") · \(item.recurrenceLabel)").font(.caption).foregroundStyle(.secondary) }
                 if item.allDay { Text("All day").font(.caption).foregroundStyle(.secondary) }
                 if !item.quantity.isEmpty { Text(item.quantity).font(.caption).foregroundStyle(.secondary) }
                 if !item.notes.isEmpty { Text(item.notes).font(.caption).foregroundStyle(.secondary).lineLimit(1) }
             }
             Spacer()
-            if let cents = item.amountCents { Text(Double(cents) / 100, format: .currency(code: item.currency)).font(.subheadline).monospacedDigit() }
+            if let cents = item.amountCents {
+                HStack(spacing: 2) {
+                    if item.kind == .bill { Text(item.isIncome ? "+" : "−") }
+                    Text(Double(cents) / 100, format: .currency(code: item.currency))
+                }.font(.subheadline).monospacedDigit().foregroundStyle(item.isIncome ? Color.green : Color.primary)
+            }
         }.padding(.vertical, 6)
     }
 }
@@ -123,6 +129,7 @@ struct ItemList: View {
     var values: [Item] {
         store.items(kind).filter { item in
             let match = search.isEmpty || item.title.localizedCaseInsensitiveContains(search) || item.notes.localizedCaseInsensitiveContains(search)
+            if kind == .bill { return match && (showHistory ? item.done : !item.done) }
             if kind == .event {
                 guard let start = item.when else { return false }
                 // End dates are exclusive; a multi-day event remains visible through its final day.
@@ -142,6 +149,13 @@ struct ItemList: View {
     var body: some View {
         NavigationStack {
             List {
+                if kind == .bill {
+                    Picker("Budget range", selection: $showHistory) {
+                        Text("Upcoming").tag(false)
+                        Text("Completed").tag(true)
+                    }.pickerStyle(.segmented)
+                    Text("Track income and expenses by date. Mark an entry received or paid to move a repeating entry to its next date. Overdue entries stay visible until completed.").font(.footnote).foregroundStyle(.secondary)
+                }
                 if kind == .event {
                     Picker("Calendar range", selection: $showHistory) {
                         Text("Today & upcoming").tag(false)
@@ -192,7 +206,7 @@ struct ItemList: View {
             Button { editing = item } label: { ItemRow(item: item) }.buttonStyle(.plain)
                 .swipeActions(edge: .trailing) { Button("Delete", role: .destructive) { store.remove(item) } }
                 .swipeActions(edge: .leading) {
-                    if kind == .task || kind == .bill || kind == .grocery { Button(kind == .bill ? "Paid" : item.done ? "Reopen" : "Done") { store.complete(item) }.tint(.accentColor) }
+                    if kind == .task || kind == .bill || kind == .grocery { Button(kind == .bill ? item.completionLabel : item.done ? "Reopen" : "Done") { store.complete(item) }.tint(.accentColor) }
                 }
             }
         }
@@ -207,11 +221,43 @@ struct MoreView: View {
             List {
                 Section("Keep life moving") {
                     NavigationLink { ItemList(kind: .task) } label: { Label("Tasks & reminders", systemImage: "checkmark.circle") }
-                    NavigationLink { ItemList(kind: .bill) } label: { Label("Bills", systemImage: "creditcard") }
+                    NavigationLink { ItemList(kind: .bill) } label: { Label("Budget", systemImage: "creditcard") }
                     NavigationLink { ItemList(kind: .meal) } label: { Label("Saved meals", systemImage: "book.closed") }
                 }
                 Section { NavigationLink { SettingsView() } label: { Label("Settings", systemImage: "gearshape") } }
             }.scrollContentBackground(.hidden).background(Color("Canvas")).navigationTitle("Household")
+        }
+    }
+}
+struct MealLine: Identifiable {
+    let id = UUID()
+    var text = ""
+    static func rows(_ values: [String]) -> [MealLine] {
+        values.isEmpty ? [MealLine()] : values.map { MealLine(text: $0) }
+    }
+}
+struct MealLinesSection: View {
+    let title: String
+    let placeholder: String
+    @Binding var lines: [MealLine]
+    @FocusState private var focusedLine: UUID?
+    var body: some View {
+        Section(title) {
+            ForEach($lines) { $line in
+                HStack {
+                    TextField(placeholder, text: $line.text).focused($focusedLine, equals: line.id)
+                    Button {
+                        let removedID = line.id
+                        lines.removeAll { $0.id == removedID }
+                        if lines.isEmpty { lines.append(MealLine()) }
+                    } label: { Image(systemName: "minus.circle").foregroundStyle(.secondary) }
+                        .buttonStyle(.borderless).accessibilityLabel("Remove \(placeholder.lowercased())")
+                }
+            }
+            Button {
+                let line = MealLine(); lines.append(line); focusedLine = line.id
+            } label: { Image(systemName: "plus.circle.fill") }
+                .accessibilityLabel("Add \(placeholder.lowercased())").disabled(lines.count >= 100)
         }
     }
 }
@@ -225,10 +271,12 @@ struct ItemEditor: View {
     @State var reminder = false
     @State var reminderDate = Date()
     @State var amount = ""
-    @State var ingredients = ""
+    @State var ingredients = [MealLine()]
+    @State var prep = [MealLine()]
+    @State var cooking = [MealLine()]
     @State var added = false
     var valid: Bool {
-        !item.title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && item.title.count <= 300 && item.notes.count <= 10000 && ingredientLines.count <= 100 && ingredientLines.allSatisfy { $0.count <= 300 } && item.store.count <= 100 && item.quantity.count <= 100 && (item.kind != .bill || (Decimal(string: amount).map { $0 >= 0 && $0 <= 1000000000 } ?? false) && item.currency.count == 3 && item.currency.allSatisfy { $0.isASCII && $0.isUppercase }) && (item.kind != .event || end > date)
+        !item.title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && item.title.count <= 300 && item.notes.count <= 10000 && ingredientLines.count <= 100 && ingredientLines.allSatisfy { $0.count <= 300 } && prepLines.count <= 100 && cookingLines.count <= 100 && (prepLines + cookingLines).allSatisfy { $0.count <= 300 } && item.store.count <= 100 && item.quantity.count <= 100 && (item.kind != .bill || (Decimal(string: amount).map { $0 >= 0 && $0 <= 1000000000 } ?? false) && item.currency.count == 3 && item.currency.allSatisfy { $0.isASCII && $0.isUppercase }) && (item.kind != .event || end > date)
     }
     var body: some View {
         NavigationStack {
@@ -236,38 +284,47 @@ struct ItemEditor: View {
                 Section("The essentials") {
                     TextField(item.kind == .dinner || item.kind == .meal ? "What’s cooking?" : "Title", text: $item.title)
                     if item.kind == .dinner {
-                        Menu("Choose a saved meal") { ForEach(store.items(.meal)) { meal in Button(meal.title) { item.title = meal.title; item.notes = meal.notes; ingredients = meal.ingredients.joined(separator: "\n") } } }
+                        Menu("Choose a saved meal") { ForEach(store.items(.meal)) { meal in Button(meal.title) { item.title = meal.title; item.notes = meal.notes; ingredients = MealLine.rows(meal.ingredients); prep = MealLine.rows(meal.prepSteps ?? []); cooking = MealLine.rows(meal.cookingSteps ?? []) } } }
                     }
                     if item.kind == .grocery { TextField("Store · leave empty for General", text: $item.store); TextField("Quantity", text: $item.quantity) }
-                    if item.kind == .bill { TextField("Amount", text: $amount).keyboardType(.decimalPad); TextField("Currency", text: $item.currency).textInputAutocapitalization(.characters) }
+                    if item.kind == .bill {
+                        Picker("Type", selection: Binding(get: { item.budgetType ?? .expense }, set: { item.budgetType = $0 })) {
+                            Text("Expense").tag(BudgetType.expense)
+                            Text("Income").tag(BudgetType.income)
+                        }.pickerStyle(.segmented)
+                        TextField("Amount", text: $amount).keyboardType(.decimalPad)
+                        TextField("Currency", text: $item.currency).textInputAutocapitalization(.characters)
+                    }
                     if item.kind != .meal && item.kind != .grocery {
                         if item.kind == .task { Toggle("Set a date", isOn: $hasDate) }
-                        if hasDate || item.kind != .task { DatePicker(item.kind == .bill ? "Due" : "Date", selection: startSelection, displayedComponents: item.kind == .event || item.kind == .task ? [.date, .hourAndMinute] : [.date]) }
+                        if hasDate || item.kind != .task { DatePicker(item.kind == .bill ? (item.isIncome ? "Expected" : "Due") : "Date", selection: startSelection, displayedComponents: item.kind == .event || item.kind == .task ? [.date, .hourAndMinute] : [.date]) }
                         if item.kind == .event { Toggle("All-day event", isOn: $item.allDay); DatePicker("Ends", selection: $end) }
                     }
                 }
                 if item.kind == .bill || item.kind == .task {
                     Section("Repeat & remind") {
-                        Picker("Repeat", selection: $item.recurrence) { Text("Never").tag("none"); Text("Weekly").tag("weekly"); Text("Monthly").tag("monthly"); Text("Yearly").tag("yearly") }
+                        Picker("Repeat", selection: $item.recurrence) { Text("Never").tag("none"); Text("Weekly").tag("weekly"); Text("Every 2 weeks").tag("biweekly"); Text("Monthly").tag("monthly"); Text("Yearly").tag("yearly") }
                         Toggle("Remind us", isOn: $reminder)
                         if reminder { DatePicker("Reminder", selection: $reminderDate) }
                     }
                 }
                 if item.kind == .dinner || item.kind == .meal {
-                    Section("Ingredients · one per line") { TextEditor(text: $ingredients).frame(minHeight: 100) }
+                    MealLinesSection(title: "Ingredients", placeholder: "Ingredient", lines: $ingredients)
+                    MealLinesSection(title: "Prep", placeholder: "Prep step", lines: $prep)
+                    MealLinesSection(title: "Cooking", placeholder: "Cooking step", lines: $cooking)
                     if item.revision > 0 {
                         Section {
                             Button(added ? "Added to General" : "Add ingredients to groceries", systemImage: "basket.badge.plus") { var copy = item; copy.ingredients = ingredientLines; store.addIngredients(copy); added = true }.disabled(added || ingredientLines.isEmpty)
-                            if item.kind == .dinner { Button("Save as a favorite meal", systemImage: "bookmark") { var meal = Item(kind: .meal); meal.title = item.title; meal.notes = item.notes; meal.ingredients = ingredientLines; store.save(meal) } }
+                            if item.kind == .dinner { Button("Save as a favorite meal", systemImage: "bookmark") { var meal = Item(kind: .meal); meal.title = item.title; meal.notes = item.notes; meal.ingredients = ingredientLines; meal.prepSteps = prepLines; meal.cookingSteps = cookingLines; store.save(meal) } }
                         }
                     }
                 }
                 Section("Notes") { TextEditor(text: $item.notes).frame(minHeight: 90) }
-                if item.kind == .bill && !item.paidDates.isEmpty { Section("Payment history") { ForEach(item.paidDates.indices, id: \.self) { i in Text(Date(timeIntervalSince1970: item.paidDates[i]), format: .dateTime.year().month().day()) } } }
+                if item.kind == .bill && !item.paidDates.isEmpty { Section(item.isIncome ? "Received history" : "Payment history") { ForEach(item.paidDates.indices, id: \.self) { i in Text(Date(timeIntervalSince1970: item.paidDates[i]), format: .dateTime.year().month().day()) } } }
                 if item.revision > 0 && [.task, .bill, .grocery].contains(item.kind) {
-                    Section { Button(item.kind == .bill ? "Mark paid" : item.done ? "Mark incomplete" : "Mark complete") { store.complete(item); dismiss() } }
+                    Section { Button(item.kind == .bill ? (item.done ? "Reopen" : item.isIncome ? "Mark received" : "Mark paid") : item.done ? "Mark incomplete" : "Mark complete") { store.complete(item); dismiss() } }
                 }
-            }.scrollContentBackground(.hidden).background(Color("Canvas")).navigationTitle(item.revision == 0 ? "Add \(item.kind == .grocery ? "grocery" : item.kind.rawValue)" : "Edit \(item.kind.rawValue)").navigationBarTitleDisplayMode(.inline)
+            }.scrollContentBackground(.hidden).background(Color("Canvas")).navigationTitle(item.revision == 0 ? "Add \(item.kind == .bill ? "budget event" : item.kind == .grocery ? "grocery" : item.kind.rawValue)" : "Edit \(item.kind == .bill ? "budget event" : item.kind.rawValue)").navigationBarTitleDisplayMode(.inline)
                 .toolbar {
                     ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() } }
                     ToolbarItem(placement: .confirmationAction) { Button("Save") { commit(); dismiss() }.disabled(!valid) }
@@ -276,7 +333,9 @@ struct ItemEditor: View {
                     hasDate = item.date != nil; date = item.when ?? Date(); end = Date(timeIntervalSince1970: item.endDate ?? date.timeIntervalSince1970 + 3600)
                     reminder = item.reminderAt != nil; reminderDate = Date(timeIntervalSince1970: item.reminderAt ?? date.timeIntervalSince1970)
                     if let cents = item.amountCents { amount = NSDecimalNumber(decimal: Decimal(cents) / 100).stringValue }
-                    ingredients = item.ingredients.joined(separator: "\n")
+                    ingredients = MealLine.rows(item.ingredients)
+                    prep = MealLine.rows(item.prepSteps ?? [])
+                    cooking = MealLine.rows(item.cookingSteps ?? [])
                 }
         }
     }
@@ -291,14 +350,23 @@ struct ItemEditor: View {
             date = newStart
         })
     }
-    var ingredientLines: [String] { ingredients.split(separator: "\n").map { $0.trimmingCharacters(in: .whitespaces) }.filter { !$0.isEmpty } }
+    func cleaned(_ lines: [MealLine]) -> [String] {
+        lines.map { $0.text.trimmingCharacters(in: .whitespacesAndNewlines) }.filter { !$0.isEmpty }
+    }
+    var ingredientLines: [String] { cleaned(ingredients) }
+    var prepLines: [String] { cleaned(prep) }
+    var cookingLines: [String] { cleaned(cooking) }
     func commit() {
         item.title = item.title.trimmingCharacters(in: .whitespacesAndNewlines)
         if [.event, .dinner, .bill].contains(item.kind) || (item.kind == .task && hasDate) { item.date = date.timeIntervalSince1970 } else { item.date = nil }
         if item.kind == .event { item.endDate = end.timeIntervalSince1970 }
         item.reminderAt = reminder ? reminderDate.timeIntervalSince1970 : nil
+        if item.kind == .bill { item.budgetType = item.budgetType ?? .expense }
         if item.kind == .bill, let decimal = Decimal(string: amount) { item.amountCents = NSDecimalNumber(decimal: decimal * 100).intValue }
         item.ingredients = ingredientLines
+        if item.kind == .dinner || item.kind == .meal {
+            item.prepSteps = prepLines; item.cookingSteps = cookingLines
+        }
         store.save(item)
         Task { await store.sync(); await CalendarBridge.shared.run(store: store) }
     }
