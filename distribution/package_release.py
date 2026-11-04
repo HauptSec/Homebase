@@ -45,7 +45,7 @@ def prepare(ipa, destination, commit, notes):
         if entitlements.get('application-identifier') != 'BH744E96JG.xyz.hauptsec.homebase':
             raise ValueError('Signing identity changed; existing installations must keep their app identity')
         certificate_prefix = str(root/'signing-cert-')
-        subprocess.run(['/usr/bin/codesign','-d','--extract-certificates',certificate_prefix,str(app)],check=True,stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL)
+        subprocess.run(['/usr/bin/codesign','-d','--extract-certificates='+certificate_prefix,str(app)],check=True,stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL)
         certificate_end = subprocess.check_output(['/usr/bin/openssl','x509','-inform','DER','-in',certificate_prefix+'0','-noout','-enddate'],text=True).strip().split('=',1)[1]
         certificate_expiry = datetime.strptime(certificate_end,'%b %d %H:%M:%S %Y %Z').replace(tzinfo=timezone.utc).timestamp()
         expires = min(profile['ExpirationDate'].replace(tzinfo=timezone.utc).timestamp(), certificate_expiry)
