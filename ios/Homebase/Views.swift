@@ -49,15 +49,23 @@ struct PairView: View {
 struct TodayView: View {
     @EnvironmentObject var store: Store
     @State var editing: Item?
-    var today: [Item] {
-        store.items.filter { item in
-            guard !item.done, item.kind != .meal, item.kind != .grocery, let when = item.when else { return false }
+    @State private var dayOffset = 0
+    private var selectedDay: Date {
+        Calendar.current.date(byAdding: .day, value: dayOffset, to: Calendar.current.startOfDay(for: Date()))!
+    }
+    private var isToday: Bool { dayOffset == 0 }
+    private var dayItems: [Item] {
+        let calendar = Calendar.current
+        let start = selectedDay
+        let end = calendar.date(byAdding: .day, value: 1, to: start)!
+        return store.items.filter { item in
+            guard item.kind != .meal, item.kind != .grocery, let when = item.when else { return false }
+            if isToday && item.done { return false }
             if item.kind == .event {
-                let today = Calendar.current.startOfDay(for: Date())
-                let tomorrow = Calendar.current.date(byAdding: .day, value: 1, to: today)!
-                return when < tomorrow && (item.endDate ?? when.timeIntervalSince1970) > today.timeIntervalSince1970
+                let eventEnd = item.endDate ?? when.timeIntervalSince1970
+                return when < end && (eventEnd > start.timeIntervalSince1970 || (eventEnd == when.timeIntervalSince1970 && when >= start))
             }
-            return Calendar.current.isDateInToday(when) || when < Date()
+            return calendar.isDate(when, inSameDayAs: start) || (isToday && when < start)
         }.sorted { ($0.date ?? 0) < ($1.date ?? 0) }
     }
     var body: some View {
@@ -65,9 +73,24 @@ struct TodayView: View {
             List {
                 Section {
                     VStack(alignment: .leading, spacing: 10) {
-                        Text(Date().formatted(.dateTime.weekday(.wide).month(.wide).day()).uppercased()).font(.caption).tracking(1.5).foregroundStyle(.secondary)
+                        HStack {
+                            Button { dayOffset -= 1 } label: {
+                                Image(systemName: "chevron.left").frame(width: 44, height: 44)
+                            }.accessibilityLabel("Previous day")
+                            Spacer(minLength: 0)
+                            Text(selectedDay.formatted(.dateTime.weekday(.abbreviated).month(.abbreviated).day().year()))
+                                .font(.subheadline.weight(.medium)).multilineTextAlignment(.center)
+                                .accessibilityAddTraits(.updatesFrequently)
+                            Spacer(minLength: 0)
+                            Button { dayOffset += 1 } label: {
+                                Image(systemName: "chevron.right").frame(width: 44, height: 44)
+                            }.accessibilityLabel("Next day")
+                        }.buttonStyle(.borderless)
+                        if !isToday {
+                            Button("Back to today") { dayOffset = 0 }.font(.subheadline).buttonStyle(.borderless)
+                        }
                         Text("Welcome home.").font(.system(size: 34, weight: .medium, design: .serif))
-                        Text(today.isEmpty ? "A little breathing room today." : "Your day, a little more together.").foregroundStyle(.secondary)
+                        Text(dayItems.isEmpty ? (isToday ? "A little breathing room today." : "A little breathing room this day.") : "Your day, a little more together.").foregroundStyle(.secondary)
                         Label(store.status, systemImage: store.syncing ? "arrow.triangle.2.circlepath" : "circle.fill").font(.caption).foregroundStyle(.secondary)
                         if !store.cache.queue.isEmpty { Text("\(store.cache.queue.count) changes saved on this phone").font(.caption).foregroundStyle(.orange) }
                     }.padding(.vertical, 18)
@@ -78,9 +101,9 @@ struct TodayView: View {
                 if !store.cache.conflicts.isEmpty {
                     Section { NavigationLink { ConflictsView() } label: { Label("Review shared changes", systemImage: "exclamationmark.arrow.triangle.2.circlepath") } }
                 }
-                Section("Today & overdue") {
-                    if today.isEmpty { ContentUnavailableView("Nothing pressing", systemImage: "sun.horizon", description: Text("Add a plan or enjoy a clear day.")) }
-                    ForEach(today) { item in
+                Section(isToday ? "Today & overdue" : "On this day") {
+                    if dayItems.isEmpty { ContentUnavailableView("Nothing pressing", systemImage: "sun.horizon", description: Text("Add a plan or enjoy a clear day.")) }
+                    ForEach(dayItems) { item in
                         if item.isHoliday { ItemRow(item: item) }
                         else { Button { editing = item } label: { ItemRow(item: item) }.buttonStyle(.plain) }
                     }

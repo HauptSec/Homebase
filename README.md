@@ -4,7 +4,7 @@ A shared home for plans, meals, bills, tasks, and groceries. Native SwiftUI for 
 
 ## What’s included
 
-- **Today:** upcoming and overdue household items, quick add, sync status.
+- **Today:** browse previous/next days with date arrows and return using Back to today. Today includes overdue household items; other dates show scheduled items, including completed items still retained on that date. Quick add and sync status remain available.
 - **Calendar:** shared events and an opt-in two-way bridge to one shared iCloud calendar.
 - **Dinners:** seven-day planner, saved meals, ingredients to groceries.
 - **Bills:** amounts, currencies, weekly/monthly/yearly recurrence, reminders, payment dates.
