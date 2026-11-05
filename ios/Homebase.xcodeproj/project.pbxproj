@@ -14,6 +14,11 @@
 		0000000000000000000000CC /* Views.swift in Sources */ = {isa = PBXBuildFile; fileRef = 000000000000000000000068 /* Views.swift */; };
 		00000000000000000000012D /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 00000000000000000000012C /* Assets.xcassets */; };
 		0000000000000000000000CD /* Holidays.swift in Sources */ = {isa = PBXBuildFile; fileRef = 000000000000000000000069 /* Holidays.swift */; };
+		0000000000000000000000CE /* EventRecurrence.swift in Sources */ = {isa = PBXBuildFile; fileRef = 00000000000000000000006A /* EventRecurrence.swift */; };
+		0000000000000000000000CF /* NativeSeriesBridge.swift in Sources */ = {isa = PBXBuildFile; fileRef = 00000000000000000000006B /* NativeSeriesBridge.swift */; };
+		0000000000000000000000D0 /* EventLocation.swift in Sources */ = {isa = PBXBuildFile; fileRef = 00000000000000000000006C /* EventLocation.swift */; };
+		0000000000000000000000D1 /* CalendarEventFields.swift in Sources */ = {isa = PBXBuildFile; fileRef = 00000000000000000000006D /* CalendarEventFields.swift */; };
+		0000000000000000000000D2 /* NativeSeriesSmoke.swift in Sources */ = {isa = PBXBuildFile; fileRef = 00000000000000000000006E /* NativeSeriesSmoke.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -25,6 +30,11 @@
 		000000000000000000000068 /* Views.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Views.swift; sourceTree = "<group>"; };
 		00000000000000000000012C /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 		000000000000000000000069 /* Holidays.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Holidays.swift; sourceTree = "<group>"; };
+		00000000000000000000006A /* EventRecurrence.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EventRecurrence.swift; sourceTree = "<group>"; };
+		00000000000000000000006B /* NativeSeriesBridge.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NativeSeriesBridge.swift; sourceTree = "<group>"; };
+		00000000000000000000006C /* EventLocation.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EventLocation.swift; sourceTree = "<group>"; };
+		00000000000000000000006D /* CalendarEventFields.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CalendarEventFields.swift; sourceTree = "<group>"; };
+		00000000000000000000006E /* NativeSeriesSmoke.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NativeSeriesSmoke.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -55,6 +65,11 @@
 				000000000000000000000067 /* CalendarBridge.swift */,
 				000000000000000000000068 /* Views.swift */,
 				000000000000000000000069 /* Holidays.swift */,
+				00000000000000000000006A /* EventRecurrence.swift */,
+				00000000000000000000006B /* NativeSeriesBridge.swift */,
+				00000000000000000000006C /* EventLocation.swift */,
+				00000000000000000000006D /* CalendarEventFields.swift */,
+				00000000000000000000006E /* NativeSeriesSmoke.swift */,
 				00000000000000000000012C /* Assets.xcassets */,
 			);
 			path = Homebase;
@@ -136,6 +151,11 @@
 				0000000000000000000000CB /* CalendarBridge.swift in Sources */,
 				0000000000000000000000CC /* Views.swift in Sources */,
 				0000000000000000000000CD /* Holidays.swift in Sources */,
+				0000000000000000000000CE /* EventRecurrence.swift in Sources */,
+				0000000000000000000000CF /* NativeSeriesBridge.swift in Sources */,
+				0000000000000000000000D0 /* EventLocation.swift in Sources */,
+				0000000000000000000000D1 /* CalendarEventFields.swift in Sources */,
+				0000000000000000000000D2 /* NativeSeriesSmoke.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

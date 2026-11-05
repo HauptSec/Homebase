@@ -52,7 +52,11 @@ struct TodayView: View {
     var today: [Item] {
         store.items.filter { item in
             guard !item.done, item.kind != .meal, item.kind != .grocery, let when = item.when else { return false }
-            if item.isHoliday { return Calendar.current.isDateInToday(when) }
+            if item.kind == .event {
+                let today = Calendar.current.startOfDay(for: Date())
+                let tomorrow = Calendar.current.date(byAdding: .day, value: 1, to: today)!
+                return when < tomorrow && (item.endDate ?? when.timeIntervalSince1970) > today.timeIntervalSince1970
+            }
             return Calendar.current.isDateInToday(when) || when < Date()
         }.sorted { ($0.date ?? 0) < ($1.date ?? 0) }
     }
@@ -91,7 +95,7 @@ struct TodayView: View {
             }.listStyle(.insetGrouped).scrollContentBackground(.hidden).background(Color("Canvas")).navigationTitle("Homebase")
                 .toolbar { ToolbarItem(placement: .topBarTrailing) { Menu { ForEach(Kind.allCases.filter { $0 != .meal }) { kind in Button(kind.title, systemImage: kind.symbol) { editing = Item(kind: kind) } } } label: { Image(systemName: "plus") } } }
                 .refreshable { await store.sync(); await CalendarBridge.shared.run(store: store) }
-                .sheet(item: $editing) { ItemEditor(item: $0) }
+                .sheet(item: $editing) { ItemEditSheet(item: $0) }
         }
     }
 }
@@ -103,6 +107,7 @@ struct ItemRow: View {
             VStack(alignment: .leading, spacing: 5) {
                 Text(item.title).strikethrough(item.done).foregroundStyle(item.done ? .secondary : .primary)
                 if let when = item.when { Text(when, format: item.kind == .event && !item.allDay ? .dateTime.year().month(.abbreviated).day().hour().minute() : .dateTime.year().month(.abbreviated).day()).font(.caption).foregroundStyle(.secondary) }
+                if item.seriesID != nil { Label("Repeating event", systemImage: "repeat").font(.caption).foregroundStyle(.secondary) }
                 if item.kind == .bill { Text("\(item.isIncome ? "Income" : "Expense") · \(item.recurrenceLabel)").font(.caption).foregroundStyle(.secondary) }
                 if item.allDay { Text("All day").font(.caption).foregroundStyle(.secondary) }
                 if !item.quantity.isEmpty { Text(item.quantity).font(.caption).foregroundStyle(.secondary) }
@@ -123,6 +128,7 @@ struct ItemList: View {
     let kind: Kind
     @State var editing: Item?
     @State var search = ""
+    @State private var deletingEvent: Item?
     @State private var showHistory = false
     @State private var calendarToday = Calendar.current.startOfDay(for: Date())
     @State var week = Calendar.current.dateInterval(of: .weekOfYear, for: Date())!.start
@@ -197,14 +203,23 @@ struct ItemList: View {
                     calendarToday = Calendar.current.startOfDay(for: Date())
                 }
                 .refreshable { await store.sync(); if kind == .event { await CalendarBridge.shared.run(store: store) } }
-                .sheet(item: $editing) { ItemEditor(item: $0) }
+                .sheet(item: $editing) { ItemEditSheet(item: $0) }
+                .confirmationDialog("Delete recurring event", isPresented: Binding(get: { deletingEvent != nil }, set: { if !$0 { deletingEvent = nil } })) {
+                    if let event = deletingEvent {
+                        Button("Delete this occurrence", role: .destructive) { store.remove(event) }
+                        Button("Delete entire series", role: .destructive) { store.removeSeries(for: event) }
+                    }
+                    Button("Cancel", role: .cancel) { deletingEvent = nil }
+                }
         }
     }
     @ViewBuilder func rows(_ items: [Item]) -> some View {
         ForEach(items) { item in
             if item.isHoliday { ItemRow(item: item) } else {
             Button { editing = item } label: { ItemRow(item: item) }.buttonStyle(.plain)
-                .swipeActions(edge: .trailing) { Button("Delete", role: .destructive) { store.remove(item) } }
+                .swipeActions(edge: .trailing) { Button("Delete", role: .destructive) {
+                    if item.seriesID != nil { deletingEvent = item } else { store.remove(item) }
+                } }
                 .swipeActions(edge: .leading) {
                     if kind == .task || kind == .bill || kind == .grocery { Button(kind == .bill ? item.completionLabel : item.done ? "Reopen" : "Done") { store.complete(item) }.tint(.accentColor) }
                 }
@@ -227,6 +242,26 @@ struct MoreView: View {
                 Section { NavigationLink { SettingsView() } label: { Label("Settings", systemImage: "gearshape") } }
             }.scrollContentBackground(.hidden).background(Color("Canvas")).navigationTitle("Household")
         }
+    }
+}
+struct ItemEditSheet: View {
+    @EnvironmentObject var store: Store
+    @Environment(\.dismiss) var dismiss
+    let item: Item
+    @State private var selected: Item?
+    var body: some View {
+        if let root = store.series(for: item), item.seriesID != nil, selected == nil {
+            NavigationStack {
+                List {
+                    Section(item.title) {
+                        if let when = item.when { Text(when.formatted(date: .abbreviated, time: .shortened)) }
+                        Button("Edit this occurrence") { selected = item }
+                        Button("Edit entire series") { selected = root }
+                    }
+                }.navigationTitle("Repeating event")
+                    .toolbar { ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() } } }
+            }
+        } else { ItemEditor(item: selected ?? item) }
     }
 }
 struct MealLine: Identifiable {
@@ -275,8 +310,14 @@ struct ItemEditor: View {
     @State var prep = [MealLine()]
     @State var cooking = [MealLine()]
     @State var added = false
+    @State private var originalItem: Item?
+    @State private var repeatsUntil = false
+    @State private var repeatEnd = Date()
+    @State private var confirmingDelete = false
+    @State private var alertOne = 1
+    @State private var alertTwo = 1
     var valid: Bool {
-        !item.title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && item.title.count <= 300 && item.notes.count <= 10000 && ingredientLines.count <= 100 && ingredientLines.allSatisfy { $0.count <= 300 } && prepLines.count <= 100 && cookingLines.count <= 100 && (prepLines + cookingLines).allSatisfy { $0.count <= 300 } && item.store.count <= 100 && item.quantity.count <= 100 && (item.kind != .bill || (Decimal(string: amount).map { $0 >= 0 && $0 <= 1000000000 } ?? false) && item.currency.count == 3 && item.currency.allSatisfy { $0.isASCII && $0.isUppercase }) && (item.kind != .event || end > date)
+        !item.title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && item.title.count <= 300 && item.notes.count <= 10000 && ingredientLines.count <= 100 && ingredientLines.allSatisfy { $0.count <= 300 } && prepLines.count <= 100 && cookingLines.count <= 100 && (prepLines + cookingLines).allSatisfy { $0.count <= 300 } && (item.location?.count ?? 0) <= 1000 && (alertOne == 1 || alertTwo == 1 || alertOne != alertTwo) && item.store.count <= 100 && item.quantity.count <= 100 && (item.kind != .bill || (Decimal(string: amount).map { $0 >= 0 && $0 <= 1000000000 } ?? false) && item.currency.count == 3 && item.currency.allSatisfy { $0.isASCII && $0.isUppercase }) && (item.kind != .event || ((item.allDay ? Calendar.current.startOfDay(for: end) >= Calendar.current.startOfDay(for: date) : end > date) && (!repeatsUntil || item.recurrence == "none" || Calendar.current.startOfDay(for: repeatEnd) >= Calendar.current.startOfDay(for: date))))
     }
     var body: some View {
         NavigationStack {
@@ -297,8 +338,66 @@ struct ItemEditor: View {
                     }
                     if item.kind != .meal && item.kind != .grocery {
                         if item.kind == .task { Toggle("Set a date", isOn: $hasDate) }
-                        if hasDate || item.kind != .task { DatePicker(item.kind == .bill ? (item.isIncome ? "Expected" : "Due") : "Date", selection: startSelection, displayedComponents: item.kind == .event || item.kind == .task ? [.date, .hourAndMinute] : [.date]) }
-                        if item.kind == .event { Toggle("All-day event", isOn: $item.allDay); DatePicker("Ends", selection: $end) }
+                        if item.kind == .event {
+                            Toggle("All-Day", isOn: $item.allDay).onChange(of: item.allDay) { _, allDay in
+                                if allDay { date = Calendar.current.startOfDay(for: date); end = date }
+                                else { end = date.addingTimeInterval(3600) }
+                            }
+                            DatePicker("Starts", selection: startSelection, displayedComponents: item.allDay ? [.date] : [.date, .hourAndMinute])
+                            DatePicker("Ends", selection: $end, displayedComponents: item.allDay ? [.date] : [.date, .hourAndMinute])
+                            if item.allDay { Text("Ends is the last day of the event.").font(.caption).foregroundStyle(.secondary) }
+                        } else if hasDate || item.kind != .task {
+                            DatePicker(item.kind == .bill ? (item.isIncome ? "Expected" : "Due") : "Date", selection: startSelection, displayedComponents: item.kind == .task ? [.date, .hourAndMinute] : [.date])
+                        }
+                    }
+                }
+                if item.kind == .event {
+                    if item.seriesID != nil {
+                        Section { Text("Changes apply only to this occurrence.").font(.footnote).foregroundStyle(.secondary) }
+                    } else if !item.calendarKey.hasPrefix("native-series:") && item.calendarKey.split(separator: "|").last.flatMap({ Double($0) }) != nil {
+                        Section("Repeat") { Text("This Apple Calendar pattern is displayed one occurrence at a time. Change its repeat rule in Apple Calendar.").font(.footnote).foregroundStyle(.secondary) }
+                    } else {
+                        Section("Repeat") {
+                            Picker("Repeat", selection: $item.recurrence) {
+                                Text("Never").tag("none"); Text("Daily").tag("daily")
+                                Text("Weekly").tag("weekly"); Text("Every 2 weeks").tag("biweekly")
+                                Text("Monthly").tag("monthly"); Text("Yearly").tag("yearly"); Text("Custom").tag("custom")
+                            }.pickerStyle(.menu)
+                            if item.recurrence == "custom" {
+                                Picker("Frequency", selection: Binding(get: { item.customFrequency ?? "weekly" }, set: { item.customFrequency = $0 })) {
+                                    Text("Daily").tag("daily"); Text("Weekly").tag("weekly"); Text("Monthly").tag("monthly"); Text("Yearly").tag("yearly")
+                                }
+                                Stepper(customRepeatLabel, value: Binding(get: { item.customInterval ?? 1 }, set: { item.customInterval = $0 }), in: 1...99)
+                                if (item.customFrequency ?? "weekly") == "weekly" {
+                                    Text("The Starts weekday is always included.").font(.caption).foregroundStyle(.secondary)
+                                    ForEach(1...7, id: \.self) { day in
+                                        Toggle(Calendar.current.weekdaySymbols[day - 1], isOn: Binding(get: { (item.repeatWeekdays ?? [Calendar.current.component(.weekday, from: date)]).contains(day) }, set: { enabled in
+                                            var days = Set(item.repeatWeekdays ?? [Calendar.current.component(.weekday, from: date)])
+                                            if enabled { days.insert(day) } else { days.remove(day) }
+                                            item.repeatWeekdays = days.sorted()
+                                        }))
+                                    }
+                                }
+                            }
+                            if item.recurrence != "none" {
+                                Toggle("End repeating", isOn: $repeatsUntil)
+                                if repeatsUntil { DatePicker("Last day", selection: $repeatEnd, in: Calendar.current.startOfDay(for: date)..., displayedComponents: [.date]) }
+                                Text("Repeats in \(item.recurrenceTimeZone ?? TimeZone.current.identifier).").font(.caption).foregroundStyle(.secondary)
+                                Text("Repeats at the same local time. Monthly and yearly repeats skip dates that do not exist. Calendar displays last year through two years ahead.").font(.footnote).foregroundStyle(.secondary)
+                            }
+                            if item.isRecurringSeries && item.revision > 0 {
+                                Text("Editing the schedule applies to the entire series and resets individual exceptions. Title and notes edits preserve exceptions.").font(.footnote).foregroundStyle(.secondary)
+                            }
+                        }
+                    }
+                }
+                if item.kind == .event {
+                    EventLocationSection(item: $item)
+                    Section("Alert") {
+                        alertPicker("Alert", selection: $alertOne)
+                        alertPicker("Second alert", selection: $alertTwo)
+                        Text("Enable Homebase notifications for alerts. This phone uses Apple Calendar alerts for synced events when its calendar bridge is connected.").font(.caption).foregroundStyle(.secondary)
+                        if alertOne != 1 && alertOne == alertTwo { Text("Choose two different alert times.").font(.caption).foregroundStyle(.red) }
                     }
                 }
                 if item.kind == .bill || item.kind == .task {
@@ -319,18 +418,30 @@ struct ItemEditor: View {
                         }
                     }
                 }
-                Section("Notes") { TextEditor(text: $item.notes).frame(minHeight: 90) }
+                Section(item.kind == .event ? "Details" : "Notes") { TextEditor(text: $item.notes).frame(minHeight: 90) }
+                if item.kind == .event && (item.revision > 0 || item.seriesID != nil) {
+                    Section { Button(item.isRecurringSeries ? "Delete entire series" : "Delete event", role: .destructive) { confirmingDelete = true } }
+                }
                 if item.kind == .bill && !item.paidDates.isEmpty { Section(item.isIncome ? "Received history" : "Payment history") { ForEach(item.paidDates.indices, id: \.self) { i in Text(Date(timeIntervalSince1970: item.paidDates[i]), format: .dateTime.year().month().day()) } } }
                 if item.revision > 0 && [.task, .bill, .grocery].contains(item.kind) {
                     Section { Button(item.kind == .bill ? (item.done ? "Reopen" : item.isIncome ? "Mark received" : "Mark paid") : item.done ? "Mark incomplete" : "Mark complete") { store.complete(item); dismiss() } }
                 }
-            }.scrollContentBackground(.hidden).background(Color("Canvas")).navigationTitle(item.revision == 0 ? "Add \(item.kind == .bill ? "budget event" : item.kind == .grocery ? "grocery" : item.kind.rawValue)" : "Edit \(item.kind == .bill ? "budget event" : item.kind.rawValue)").navigationBarTitleDisplayMode(.inline)
+            }.scrollContentBackground(.hidden).background(Color("Canvas")).navigationTitle(item.revision == 0 && item.seriesID == nil ? "Add \(item.kind == .bill ? "budget event" : item.kind == .grocery ? "grocery" : item.kind.rawValue)" : "Edit \(item.kind == .bill ? "budget event" : item.kind.rawValue)").navigationBarTitleDisplayMode(.inline)
                 .toolbar {
                     ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() } }
                     ToolbarItem(placement: .confirmationAction) { Button("Save") { commit(); dismiss() }.disabled(!valid) }
                 }
+                .confirmationDialog(item.isRecurringSeries ? "Delete the entire recurring series?" : "Delete this event?", isPresented: $confirmingDelete) {
+                    Button("Delete", role: .destructive) { store.remove(item); dismiss() }
+                }
                 .onAppear {
+                    originalItem = item
+                    repeatsUntil = item.recurrenceUntil != nil
+                    repeatEnd = Date(timeIntervalSince1970: item.recurrenceUntil ?? (item.date ?? Date().timeIntervalSince1970))
                     hasDate = item.date != nil; date = item.when ?? Date(); end = Date(timeIntervalSince1970: item.endDate ?? date.timeIntervalSince1970 + 3600)
+                    if item.kind == .event && item.allDay { end = Calendar.current.date(byAdding: .day, value: -1, to: end)! }
+                    alertOne = item.alertOffsets?.first ?? 1
+                    alertTwo = (item.alertOffsets?.count ?? 0) > 1 ? item.alertOffsets![1] : 1
                     reminder = item.reminderAt != nil; reminderDate = Date(timeIntervalSince1970: item.reminderAt ?? date.timeIntervalSince1970)
                     if let cents = item.amountCents { amount = NSDecimalNumber(decimal: Decimal(cents) / 100).stringValue }
                     ingredients = MealLine.rows(item.ingredients)
@@ -343,12 +454,27 @@ struct ItemEditor: View {
     var startSelection: Binding<Date> {
         Binding(get: { date }, set: { newStart in
             if item.kind == .event {
-                end = item.allDay
-                    ? Calendar.current.date(byAdding: .day, value: 1, to: newStart)!
-                    : newStart.addingTimeInterval(3600)
+                end = item.allDay ? newStart : newStart.addingTimeInterval(3600)
             }
             date = newStart
         })
+    }
+    var customRepeatLabel: String {
+        let count = item.customInterval ?? 1
+        let unit = ["daily": "day", "weekly": "week", "monthly": "month", "yearly": "year"][item.customFrequency ?? "weekly"] ?? "week"
+        return "Every \(count) \(unit)\(count == 1 ? "" : "s")"
+    }
+    @ViewBuilder func alertPicker(_ title: String, selection: Binding<Int>) -> some View {
+        Picker(title, selection: selection) {
+            Text("None").tag(1); Text("At time of event").tag(0)
+            Text("5 minutes before").tag(-300); Text("10 minutes before").tag(-600)
+            Text("15 minutes before").tag(-900); Text("30 minutes before").tag(-1800)
+            Text("1 hour before").tag(-3600); Text("2 hours before").tag(-7200)
+            Text("1 day before").tag(-86400); Text("2 days before").tag(-172800); Text("1 week before").tag(-604800)
+            if selection.wrappedValue != 1 && ![0,-300,-600,-900,-1800,-3600,-7200,-86400,-172800,-604800].contains(selection.wrappedValue) {
+                Text("\(-selection.wrappedValue) seconds before").tag(selection.wrappedValue)
+            }
+        }
     }
     func cleaned(_ lines: [MealLine]) -> [String] {
         lines.map { $0.text.trimmingCharacters(in: .whitespacesAndNewlines) }.filter { !$0.isEmpty }
@@ -359,7 +485,30 @@ struct ItemEditor: View {
     func commit() {
         item.title = item.title.trimmingCharacters(in: .whitespacesAndNewlines)
         if [.event, .dinner, .bill].contains(item.kind) || (item.kind == .task && hasDate) { item.date = date.timeIntervalSince1970 } else { item.date = nil }
-        if item.kind == .event { item.endDate = end.timeIntervalSince1970 }
+        if item.kind == .event {
+            if item.allDay {
+                item.date = Calendar.current.startOfDay(for: date).timeIntervalSince1970
+                item.endDate = Calendar.current.date(byAdding: .day, value: 1, to: Calendar.current.startOfDay(for: end))!.timeIntervalSince1970
+            } else { item.endDate = end.timeIntervalSince1970 }
+            item.alertOffsets = [alertOne, alertTwo].filter { $0 != 1 }
+            if item.seriesID == nil {
+                if item.recurrenceTimeZone == nil || originalItem?.date != item.date { item.recurrenceTimeZone = TimeZone.current.identifier }
+                let calendar = EventRecurrence.calendar(for: item)
+                item.recurrenceUntil = repeatsUntil && item.recurrence != "none" ? calendar.date(byAdding: .day, value: 1, to: calendar.startOfDay(for: repeatEnd))!.addingTimeInterval(-1).timeIntervalSince1970 : nil
+                if item.recurrence == "custom" {
+                    item.customFrequency = item.customFrequency ?? "weekly"; item.customInterval = item.customInterval ?? 1
+                    if item.customFrequency == "weekly" {
+                        var days = Set(item.repeatWeekdays ?? [])
+                        days.insert(calendar.component(.weekday, from: Date(timeIntervalSince1970: item.date!)))
+                        item.repeatWeekdays = days.sorted()
+                    } else { item.repeatWeekdays = nil }
+                } else { item.customFrequency = nil; item.customInterval = nil; item.repeatWeekdays = nil }
+                if item.recurrence != "none" || originalItem?.isRecurringSeries == true {
+                    let changedSchedule = originalItem.map { $0.date != item.date || $0.endDate != item.endDate || $0.allDay != item.allDay || $0.recurrence != item.recurrence || $0.recurrenceUntil != item.recurrenceUntil || $0.customFrequency != item.customFrequency || $0.customInterval != item.customInterval || $0.repeatWeekdays != item.repeatWeekdays } ?? true
+                    if item.seriesVersion == nil || changedSchedule { item.seriesVersion = UUID() }
+                }
+            }
+        }
         item.reminderAt = reminder ? reminderDate.timeIntervalSince1970 : nil
         if item.kind == .bill { item.budgetType = item.budgetType ?? .expense }
         if item.kind == .bill, let decimal = Decimal(string: amount) { item.amountCents = NSDecimalNumber(decimal: decimal * 100).intValue }
@@ -401,11 +550,20 @@ struct ConflictsView: View {
     }
 }
 struct SettingsView: View {
+    @AppStorage("appearance") private var appearance = "system"
     @EnvironmentObject var store: Store
     @StateObject var bridge = CalendarBridge.shared
     @State var repairing = false
     var body: some View {
         Form {
+            Section("Appearance") {
+                Picker("Theme", selection: $appearance) {
+                    Text("System").tag("system")
+                    Text("Light").tag("light")
+                    Text("Dark").tag("dark")
+                }.pickerStyle(.segmented)
+                Text("System follows your iPhone’s appearance. Your choice is saved on this phone.").font(.caption).foregroundStyle(.secondary)
+            }
             Section("Connection") {
                 LabeledContent("Status", value: store.status)
                 LabeledContent("Pending edits", value: "\(store.cache.queue.count)")
@@ -444,16 +602,16 @@ struct SettingsView: View {
                     Button("Choose calendar") { Task { await bridge.load() } }
                     ForEach(bridge.calendars, id: \.calendarIdentifier) { calendar in Button("\(calendar.title) · \(calendar.source.title)") { Task { await bridge.connect(calendar, store: store) } } }
                 } else { Button("Disconnect calendar bridge") { Task { await bridge.disconnect(store: store) } } }
-                Text("Sync covers the past 30 days and next year. iOS decides when background refresh runs. Calendar conflicts or missing events are flagged for review.").font(.caption).foregroundStyle(.secondary)
+                Text("Ordinary imports cover the past 30 days and next year. Recurring series include last year through two years ahead. iOS controls background refresh; conflicts and missing events are flagged for review.").font(.caption).foregroundStyle(.secondary)
             }
             if !bridge.issues.isEmpty {
                 Section("Calendar changes to review") {
                     ForEach(bridge.issues) { issue in
                         VStack(alignment: .leading, spacing: 8) {
                             Text(issue.item.title).font(.headline)
-                            Text(issue.missing ? "This event is missing from Apple Calendar. It may have been deleted or iCloud may still be syncing." : "This event changed in both Homebase and Apple Calendar.").font(.caption)
-                            Button(issue.missing ? "Restore in Apple Calendar" : "Use Homebase version") { Task { await bridge.resolve(issue, useHomebase: true, store: store) } }
-                            Button(issue.missing ? "Confirm deletion from Homebase" : "Use Apple Calendar version") { Task { await bridge.resolve(issue, useHomebase: false, store: store) } }
+                            Text(issue.message ?? (issue.missing ? "This event is missing from Apple Calendar. It may have been deleted or iCloud may still be syncing." : "This event changed in both Homebase and Apple Calendar.")).font(.caption)
+                            Button(issue.missing ? "Restore in Apple Calendar" : "Use Homebase version") { Task { await bridge.resolve(issue, useHomebase: true, store: store) } }.disabled(!issue.allowHome)
+                            Button(issue.missing ? "Confirm deletion from Homebase" : "Use Apple Calendar version") { Task { await bridge.resolve(issue, useHomebase: false, store: store) } }.disabled(!issue.allowApple)
                         }
                     }
                 }

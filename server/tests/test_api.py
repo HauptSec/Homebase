@@ -106,6 +106,39 @@ class APITests(unittest.TestCase):
         invalid = self.mutation(kind='meal', prepSteps=['x' * 301])
         self.assertEqual(self.client.post('/v1/mutations', headers=self.a, json=invalid).status_code, 422)
 
+    def test_recurring_events_exceptions_and_field_clears(self):
+        version = str(uuid4())
+        data = self.mutation(kind='event', title='Weekly plan', date=1793811600, endDate=1793815200,
+                             recurrence='custom', customFrequency='weekly', customInterval=2,
+                             repeatWeekdays=[2,4], recurrenceUntil=1800000000,
+                             recurrenceTimeZone='America/Los_Angeles', seriesVersion=version,
+                             location='123 Main Street', latitude=34, longitude=-118, alertOffsets=[-900,0])
+        response = self.client.post('/v1/mutations', headers=self.a, json=data)
+        self.assertEqual(response.status_code, 200, response.text)
+        root = response.json()['item']
+        occurrence = self.mutation(kind='event', title='Moved instance', date=1793818800, endDate=1793822400,
+                                   seriesID=root['id'], seriesVersion=version, occurrenceDate=1793811600)
+        result = self.client.post('/v1/mutations', headers=self.b, json=occurrence)
+        self.assertEqual(result.status_code, 200, result.text)
+        root.update(recurrenceUntil=None, latitude=None, longitude=None, location='', alertOffsets=[])
+        result = self.client.post('/v1/mutations', headers=self.a, json={'mutationId':str(uuid4()), 'baseRevision':1, 'item':root})
+        self.assertEqual(result.status_code, 200, result.text)
+        root = result.json()['item']
+        self.assertIsNone(root['recurrenceUntil']); self.assertIsNone(root['latitude'])
+        self.assertEqual(root['alertOffsets'], [])
+        # A late offline occurrence edit must not reappear after the series was deleted.
+        root['deleted'] = True
+        self.assertEqual(self.client.post('/v1/mutations', headers=self.a, json={'mutationId':str(uuid4()), 'baseRevision':2, 'item':root}).status_code, 200)
+        occurrence['mutationId'] = str(uuid4()); occurrence['baseRevision'] = 1
+        self.assertEqual(self.client.post('/v1/mutations', headers=self.b, json=occurrence).status_code, 409)
+
+    def test_event_repeat_and_alert_validation(self):
+        for fields in [dict(recurrence='custom'), dict(alertOffsets=[0,-60,-120]), dict(alertOffsets=[0,0]),
+                       dict(alertOffsets=[60]), dict(repeatWeekdays=[8]), dict(recurrenceTimeZone='Not/AZone'),
+                       dict(recurrenceUntil=1)]:
+            data = self.mutation(kind='event', date=1793811600, endDate=1793815200, **fields)
+            self.assertEqual(self.client.post('/v1/mutations', headers=self.a, json=data).status_code, 422, fields)
+
     def test_push_only_to_other_device(self):
         self.client.post('/v1/push', headers=self.a, json={'token': 'a'*64})
         self.client.post('/v1/push', headers=self.b, json={'token': 'b'*64})

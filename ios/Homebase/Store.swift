@@ -38,6 +38,7 @@ enum Keychain {
     @Published var releaseCheckedAt: Date?
     private var lastReleaseCheck = Date.distantPast
     @Published var endpoint = UserDefaults.standard.string(forKey: "endpoint") ?? "https://homebase.hauptsec.xyz"
+    private var eventAlertTask: Task<Void, Never>?
     private var liveTask: Task<Void, Never>?
     private var socket: URLSessionWebSocketTask?
     private let encoder = JSONEncoder()
@@ -65,7 +66,7 @@ enum Keychain {
             catch { cacheHealthy = false; self.error = "The local cache could not be read. It has been preserved; do not reinstall if you have unsynced edits." }
         }
     }
-    var items: [Item] { cache.items.filter { !$0.deleted } + USHolidays.currentEvents() }
+    var items: [Item] { EventRecurrence.visibleItems(cache.items) + USHolidays.currentEvents() }
     func items(_ kind: Kind) -> [Item] {
         items.filter { $0.kind == kind }.sorted {
             if $0.done != $1.done { return !$0.done }
@@ -92,7 +93,14 @@ enum Keychain {
         upsert(item)
         // Queue every edit; never change an in-flight request's idempotency key or body.
         cache.queue.append(Mutation(baseRevision: item.revision, item: item))
-        if persist() { Task { await sync() } }
+        if persist() { refreshEventAlerts(prompt: item.kind == .event && !(item.alertOffsets ?? []).isEmpty); Task { await sync() } }
+    }
+    func series(for item: Item) -> Item? {
+        if item.isRecurringSeries { return item }
+        return cache.items.first { $0.id == item.seriesID && !$0.deleted && $0.isRecurringSeries }
+    }
+    func removeSeries(for item: Item) {
+        if let root = series(for: item) { remove(root) }
     }
     func remove(_ item: Item) { var copy = item; copy.deleted = true; save(copy) }
     func complete(_ item: Item) { var copy = item; copy.complete(); save(copy) }
@@ -130,7 +138,7 @@ enum Keychain {
     func sync() async {
         guard !demo, paired, !syncing, cacheHealthy else { return }
         syncing = true; status = "Syncing…"
-        defer { syncing = false }
+        defer { syncing = false; refreshEventAlerts() }
         do {
             guard persist() else { return }
             // A conflict blocks subsequent edits to that item, not the rest of the household.
@@ -234,11 +242,42 @@ enum Keychain {
             await UIApplication.shared.open(url)
         } catch { releaseStatus = error.localizedDescription }
     }
+    func refreshEventAlerts(prompt: Bool = false) {
+        guard !demo else { return }
+        eventAlertTask?.cancel()
+        let plan = EventAlertPlan.make(items: cache.items, usesAppleCalendar: !CalendarBridge.shared.selected.isEmpty)
+        eventAlertTask = Task {
+            let center = UNUserNotificationCenter.current()
+            var settings = await center.notificationSettings()
+            if prompt && settings.authorizationStatus == .notDetermined {
+                _ = try? await center.requestAuthorization(options: [.alert, .sound, .badge])
+                settings = await center.notificationSettings()
+            }
+            guard !Task.isCancelled else { return }
+            let pending = await center.pendingNotificationRequests()
+            guard !Task.isCancelled else { return }
+            let allowed = settings.authorizationStatus == .authorized || settings.authorizationStatus == .provisional
+            let desired = allowed ? plan : []
+            let ids = Set(desired.map(\.id))
+            center.removePendingNotificationRequests(withIdentifiers: pending.filter { $0.identifier.hasPrefix("homebase-event:") && !ids.contains($0.identifier) }.map(\.identifier))
+            for alert in desired {
+                guard !Task.isCancelled else { return }
+                if pending.contains(where: { $0.identifier == alert.id && ($0.content.userInfo["fireAt"] as? Double) == alert.date.timeIntervalSince1970 && $0.content.title == alert.title }) { continue }
+                let delay = alert.date.timeIntervalSinceNow
+                guard delay > 0 else { continue }
+                let content = UNMutableNotificationContent()
+                content.title = alert.title; content.body = "Calendar event reminder"; content.sound = .default
+                content.userInfo = ["fireAt": alert.date.timeIntervalSince1970]
+                do { try await center.add(UNNotificationRequest(identifier: alert.id, content: content, trigger: UNTimeIntervalNotificationTrigger(timeInterval: max(1, delay), repeats: false))) }
+                catch { self.error = "Could not schedule an event alert: \(error.localizedDescription)" }
+            }
+        }
+    }
     func registerPush() async {
         guard !demo else { return }
         do {
             let granted = try await UNUserNotificationCenter.current().requestAuthorization(options: [.alert, .sound, .badge])
-            if granted { UIApplication.shared.registerForRemoteNotifications() }
+            if granted { UIApplication.shared.registerForRemoteNotifications(); refreshEventAlerts() }
             if let token = UserDefaults.standard.string(forKey: "pushToken") { await uploadPush(token) }
         } catch { self.error = error.localizedDescription }
     }

@@ -23,6 +23,18 @@ struct Item: Codable, Identifiable, Equatable {
     var amountCents: Int?
     var currency = "USD"
     var recurrence = "none"
+    var customFrequency: String?
+    var customInterval: Int?
+    var repeatWeekdays: [Int]?
+    var location: String?
+    var latitude: Double?
+    var longitude: Double?
+    var alertOffsets: [Int]?
+    var recurrenceUntil: Double?
+    var recurrenceTimeZone: String?
+    var seriesID: UUID?
+    var occurrenceDate: Double?
+    var seriesVersion: UUID?
     var ingredients: [String] = []
     var prepSteps: [String]?
     var cookingSteps: [String]?
@@ -33,11 +45,53 @@ struct Item: Codable, Identifiable, Equatable {
     var revision = 0
     var updatedAt: Double = 0
     var updatedBy = ""
+    enum CodingKeys: String, CodingKey {
+        case id, kind, title, notes, date, endDate, reminderAt, store, calendarKey, quantity, budgetType, amountCents, currency, recurrence, customFrequency, customInterval, repeatWeekdays, location, latitude, longitude, alertOffsets, recurrenceUntil, recurrenceTimeZone, seriesID, occurrenceDate, seriesVersion, ingredients, prepSteps, cookingSteps, paidDates, allDay, done, deleted, revision, updatedAt, updatedBy
+    }
+    func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(id, forKey: .id)
+        try container.encode(kind, forKey: .kind)
+        try container.encode(title, forKey: .title)
+        try container.encode(notes, forKey: .notes)
+        try container.encode(date, forKey: .date)
+        try container.encode(endDate, forKey: .endDate)
+        try container.encode(reminderAt, forKey: .reminderAt)
+        try container.encode(store, forKey: .store)
+        try container.encode(calendarKey, forKey: .calendarKey)
+        try container.encode(quantity, forKey: .quantity)
+        try container.encode(budgetType, forKey: .budgetType)
+        try container.encode(amountCents, forKey: .amountCents)
+        try container.encode(currency, forKey: .currency)
+        try container.encode(recurrence, forKey: .recurrence)
+        try container.encode(customFrequency, forKey: .customFrequency)
+        try container.encode(customInterval, forKey: .customInterval)
+        try container.encode(repeatWeekdays, forKey: .repeatWeekdays)
+        try container.encode(location, forKey: .location)
+        try container.encode(latitude, forKey: .latitude)
+        try container.encode(longitude, forKey: .longitude)
+        try container.encode(alertOffsets, forKey: .alertOffsets)
+        try container.encode(recurrenceUntil, forKey: .recurrenceUntil)
+        try container.encode(recurrenceTimeZone, forKey: .recurrenceTimeZone)
+        try container.encode(seriesID, forKey: .seriesID)
+        try container.encode(occurrenceDate, forKey: .occurrenceDate)
+        try container.encode(seriesVersion, forKey: .seriesVersion)
+        try container.encode(ingredients, forKey: .ingredients)
+        try container.encode(prepSteps, forKey: .prepSteps)
+        try container.encode(cookingSteps, forKey: .cookingSteps)
+        try container.encode(paidDates, forKey: .paidDates)
+        try container.encode(allDay, forKey: .allDay)
+        try container.encode(done, forKey: .done)
+        try container.encode(deleted, forKey: .deleted)
+        try container.encode(revision, forKey: .revision)
+        try container.encode(updatedAt, forKey: .updatedAt)
+        try container.encode(updatedBy, forKey: .updatedBy)
+    }
     var when: Date? { date.map { Date(timeIntervalSince1970: $0) } }
     var isIncome: Bool { kind == .bill && budgetType == .income }
     var completionLabel: String { done ? "Reopen" : isIncome ? "Received" : "Paid" }
     var recurrenceLabel: String {
-        switch recurrence { case "weekly": "Weekly"; case "biweekly": "Every 2 weeks"; case "monthly": "Monthly"; case "yearly": "Yearly"; default: "One-time" }
+        switch recurrence { case "daily": "Daily"; case "weekly": "Weekly"; case "biweekly": "Every 2 weeks"; case "monthly": "Monthly"; case "yearly": "Yearly"; case "custom": "Custom"; default: "One-time" }
     }
     mutating func complete() {
         if kind == .bill && !done { paidDates.append(Date().timeIntervalSince1970) }

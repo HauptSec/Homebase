@@ -11,6 +11,10 @@ struct CalendarIssue: Identifiable {
     var id: UUID { item.id }
     let item: Item
     let missing: Bool
+    var nativeSeriesID: UUID? = nil
+    var message: String? = nil
+    var allowApple = true
+    var allowHome = true
 }
 @MainActor final class CalendarBridge: ObservableObject {
     static let shared = CalendarBridge()
@@ -47,6 +51,11 @@ struct CalendarIssue: Identifiable {
         } catch { status = error.localizedDescription }
     }
     func resolve(_ issue: CalendarIssue, useHomebase: Bool, store: Store) async {
+        if let seriesID = issue.nativeSeriesID {
+            if issue.missing && !useHomebase { store.remove(issue.item) }
+            NativeSeriesBridge.shared.resolutions[seriesID] = issue.missing ? true : useHomebase
+            await store.sync(); await run(store: store); return
+        }
         let id = issue.item.id.uuidString
         if issue.missing {
             if useHomebase { var item = issue.item; item.calendarKey = ""; store.save(item); links.removeValue(forKey: id) }
@@ -59,10 +68,17 @@ struct CalendarIssue: Identifiable {
         await store.sync()
         await run(store: store)
     }
-    private func stamp(_ event: EKEvent) -> String {
-        "\(event.title ?? "")|\(event.startDate.timeIntervalSince1970)|\(event.endDate.timeIntervalSince1970)|\(event.notes ?? "")|\(event.isAllDay)"
+    private func extraStamp(_ item: Item) -> String {
+        guard !(item.location ?? "").isEmpty || !(item.alertOffsets ?? []).isEmpty || item.latitude != nil || item.longitude != nil else { return "" }
+        return "|extra:\(item.location ?? "")|\(item.latitude ?? 0)|\(item.longitude ?? 0)|\((item.alertOffsets ?? []).sorted())"
     }
-    private func stamp(_ item: Item) -> String { "\(item.title)|\(item.date ?? 0)|\(item.endDate ?? 0)|\(item.notes)|\(item.deleted)|\(item.allDay)" }
+    private func stamp(_ event: EKEvent) -> String {
+        var item = Item(kind: .event); CalendarEventFields.read(event, into: &item)
+        return "\(event.title ?? "")|\(event.startDate.timeIntervalSince1970)|\(event.endDate.timeIntervalSince1970)|\(event.notes ?? "")|\(event.isAllDay)" + extraStamp(item)
+    }
+    private func stamp(_ item: Item) -> String {
+        "\(item.title)|\(item.date ?? 0)|\(item.endDate ?? 0)|\(item.notes)|\(item.deleted)|\(item.allDay)" + extraStamp(item)
+    }
     private func key(_ event: EKEvent) -> String {
         let root = event.calendarItemExternalIdentifier ?? event.calendarItemIdentifier
         return event.hasRecurrenceRules || event.isDetached ? "\(root)|\(event.occurrenceDate?.timeIntervalSince1970 ?? event.startDate.timeIntervalSince1970)" : root
@@ -88,7 +104,8 @@ struct CalendarIssue: Identifiable {
             var byKey = Dictionary(appleEvents.map { (key($0), $0) }, uniquingKeysWith: { first, _ in first })
             var reviewCount = 0
             issues = []
-            for item in store.cache.items where item.kind == .event {
+            let managedSeries = try NativeSeriesBridge.shared.run(store: store, events: events, calendar: calendar, legacyLinks: &links, issues: &issues)
+            for item in store.cache.items where item.kind == .event && item.seriesID == nil && item.seriesVersion == nil && !item.isRecurringSeries {
                 let id = item.id.uuidString
                 let link = links[id]
                 var apple = byKey[item.calendarKey]
@@ -106,20 +123,18 @@ struct CalendarIssue: Identifiable {
                     }
                     if appleChanged || link == nil {
                         var imported = item
-                        imported.title = apple.title ?? "Untitled event"; imported.date = apple.startDate.timeIntervalSince1970
-                        imported.allDay = apple.isAllDay; imported.endDate = apple.endDate.timeIntervalSince1970; imported.notes = apple.notes ?? ""; imported.calendarKey = key(apple)
+                        CalendarEventFields.read(apple, into: &imported); imported.calendarKey = key(apple)
                         if stamp(imported) != stamp(item) || item.calendarKey != imported.calendarKey { store.save(imported) }
                         links[id] = CalendarLink(eventIdentifier: apple.eventIdentifier, lastApple: stamp(apple), lastHome: stamp(imported))
                     } else if homeChanged {
-                        apple.isAllDay = item.allDay; apple.title = item.title; apple.startDate = item.when; apple.endDate = Date(timeIntervalSince1970: item.endDate ?? (item.date ?? 0) + 3600); apple.notes = item.notes
+                        CalendarEventFields.write(item, to: apple)
                         try events.save(apple, span: .thisEvent, commit: true)
                         links[id] = CalendarLink(eventIdentifier: apple.eventIdentifier, lastApple: stamp(apple), lastHome: stamp(item))
                     }
                 } else if !item.deleted && item.calendarKey.isEmpty {
-                    guard let when = item.when else { continue }
+                    guard item.when != nil else { continue }
                     let created = EKEvent(eventStore: events)
-                    created.isAllDay = item.allDay; created.calendar = calendar; created.title = item.title; created.startDate = when
-                    created.endDate = Date(timeIntervalSince1970: item.endDate ?? when.timeIntervalSince1970 + 3600); created.notes = item.notes
+                    created.calendar = calendar; CalendarEventFields.write(item, to: created)
                     // Persist the Homebase ID on the Apple event for crash-recovery matching.
                     created.url = URL(string: "homebase://event/\(id)")
                     if let existing = appleEvents.first(where: { $0.url == created.url }) {
@@ -137,16 +152,18 @@ struct CalendarIssue: Identifiable {
                 }
             }
             for (calendarKey, event) in byKey {
+                if managedSeries.contains(event.calendarItemExternalIdentifier ?? event.calendarItemIdentifier) { continue }
                 if let url = event.url, url.scheme == "homebase" { continue }
                 if store.cache.items.contains(where: { $0.calendarKey == calendarKey }) { continue }
                 var item = Item(kind: .event)
                 item.id = stableID(calendarKey); item.calendarKey = calendarKey; item.title = event.title ?? "Untitled event"
-                item.allDay = event.isAllDay; item.date = event.startDate.timeIntervalSince1970; item.endDate = event.endDate.timeIntervalSince1970; item.notes = event.notes ?? ""
+                CalendarEventFields.read(event, into: &item)
                 store.save(item)
                 links[item.id.uuidString] = CalendarLink(eventIdentifier: event.eventIdentifier, lastApple: stamp(event), lastHome: stamp(item))
             }
             UserDefaults.standard.set(try JSONEncoder().encode(links), forKey: "calendarLinks")
             await store.sync()
+            reviewCount = issues.count
             status = reviewCount == 0 ? "Shared calendar synced" : "\(reviewCount) calendar changes need review. Check Calendar before editing in Homebase."
         } catch { status = "Calendar sync paused: \(error.localizedDescription)" }
     }

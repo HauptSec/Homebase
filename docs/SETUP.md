@@ -111,7 +111,7 @@ Then run `docker compose up -d --force-recreate api`, open each phone's Homebase
 
 Create/share a calendar in Apple Calendar and accept the invitation on the other phone. On **one** phone, open Homebase → Household → Settings → Choose calendar. Grant access and select that shared calendar under the iCloud source. The other phone consumes Homebase's synced events and should not claim the bridge.
 
-The first connection imports the last 30 days and next year of this calendar and exports existing Homebase events into it. Choose carefully. Recurring series should be managed in Apple Calendar; Homebase edits individual occurrences. Review calendar conflicts or missing events in Settings. Background sync is discretionary, especially after force-quitting the app.
+The first connection imports the last 30 days and next year of this calendar and exports existing Homebase events into it. Choose carefully. Homebase supports native repeating series in Apple Calendar, with edits to one occurrence or the entire series. Advanced Apple recurrence rules that Homebase cannot represent remain managed in Apple Calendar. Review calendar conflicts or missing events in Settings. Background sync is discretionary, especially after force-quitting the app.
 
 ## 6. Acceptance checks on both phones
 

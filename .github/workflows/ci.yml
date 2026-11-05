@@ -40,4 +40,8 @@ jobs:
         run: |
           swiftc ios/Homebase/Models.swift ios/Tests/BudgetTests.swift -o /tmp/homebase-budget-tests
           /tmp/homebase-budget-tests
+      - name: Verify recurring events and native calendar fields
+        run: |
+          swiftc ios/Homebase/Models.swift ios/Homebase/EventRecurrence.swift ios/Homebase/CalendarEventFields.swift ios/Tests/RecurrenceTests.swift -o /tmp/homebase-recurrence-tests
+          /tmp/homebase-recurrence-tests
       - run: xcodebuild -project ios/Homebase.xcodeproj -scheme Homebase -sdk iphonesimulator -configuration Debug CODE_SIGNING_ALLOWED=NO build

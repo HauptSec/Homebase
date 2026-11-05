@@ -101,10 +101,22 @@ class Item(BaseModel):
     budgetType: Literal['expense', 'income'] | None = None
     amountCents: int | None = Field(default=None, ge=0, le=100000000000)
     currency: str = Field(default='USD', pattern='^[A-Z]{3}$')
-    recurrence: Literal['none', 'weekly', 'biweekly', 'monthly', 'yearly'] = 'none'
+    recurrence: Literal['none', 'daily', 'weekly', 'biweekly', 'monthly', 'yearly', 'custom'] = 'none'
+    customFrequency: Literal['daily', 'weekly', 'monthly', 'yearly'] | None = None
+    customInterval: int | None = Field(default=None, ge=1, le=99)
+    repeatWeekdays: list[int] | None = Field(default=None, max_length=7)
+    location: str | None = Field(default=None, max_length=1000)
+    latitude: float | None = Field(default=None, ge=-90, le=90)
+    longitude: float | None = Field(default=None, ge=-180, le=180)
+    alertOffsets: list[int] | None = Field(default=None, max_length=2)
+    recurrenceUntil: float | None = None
+    recurrenceTimeZone: str | None = Field(default=None, max_length=100)
+    seriesID: UUID | None = None
+    occurrenceDate: float | None = None
+    seriesVersion: UUID | None = None
     ingredients: list[str] = Field(default_factory=list, max_length=100)
-    prepSteps: list[str] = Field(default_factory=list, max_length=100)
-    cookingSteps: list[str] = Field(default_factory=list, max_length=100)
+    prepSteps: list[str] | None = Field(default=None, max_length=100)
+    cookingSteps: list[str] | None = Field(default=None, max_length=100)
     paidDates: list[float] = Field(default_factory=list, max_length=10000)
     allDay: bool = False
     done: bool = False
@@ -122,9 +134,27 @@ class Item(BaseModel):
             raise ValueError('This item requires a date')
         if self.kind == 'event' and (self.endDate is None or self.endDate <= self.date):
             raise ValueError('Event end must follow its start')
+        if self.recurrence in ('daily', 'custom') and self.kind != 'event':
+            raise ValueError('Daily recurrence is only supported for calendar events')
+        if self.recurrence == 'custom' and (self.customFrequency is None or self.customInterval is None):
+            raise ValueError('Custom repeats require a frequency and interval')
+        if self.repeatWeekdays is not None and (len(set(self.repeatWeekdays)) != len(self.repeatWeekdays) or any(day < 1 or day > 7 for day in self.repeatWeekdays)):
+            raise ValueError('Invalid repeat weekdays')
+        if self.alertOffsets is not None and (len(set(self.alertOffsets)) != len(self.alertOffsets) or any(offset > 0 or offset < -604800 for offset in self.alertOffsets)):
+            raise ValueError('Use up to two distinct alerts within one week before the event')
+        if self.recurrenceUntil is not None and (self.kind != 'event' or self.date is None or self.recurrenceUntil < self.date):
+            raise ValueError('Repeat end must be on or after the first event')
+        if self.recurrenceTimeZone:
+            from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
+            try:
+                ZoneInfo(self.recurrenceTimeZone)
+            except (ZoneInfoNotFoundError, ValueError):
+                raise ValueError('Invalid recurrence time zone')
+        if self.seriesID is not None and (self.kind != 'event' or self.occurrenceDate is None or self.recurrence != 'none' or self.seriesID == self.id):
+            raise ValueError('Invalid recurring event occurrence')
         if any(len(value) > 300 for value in self.ingredients):
             raise ValueError('Ingredient names must be at most 300 characters')
-        if any(len(value) > 300 for value in self.prepSteps + self.cookingSteps):
+        if any(len(value) > 300 for value in (self.prepSteps or []) + (self.cookingSteps or [])):
             raise ValueError('Prep and cooking steps must be at most 300 characters')
         return self
 
@@ -269,9 +299,14 @@ def mutate(payload: Mutation, actor=Depends(device)):
         # Preserve newly added fields when older clients save unrelated edits.
         if current:
             previous_item = json.loads(current['body'])
-            for field in ('budgetType', 'prepSteps', 'cookingSteps'):
+            for field in ('budgetType', 'prepSteps', 'cookingSteps', 'recurrenceUntil', 'recurrenceTimeZone', 'seriesID', 'occurrenceDate', 'seriesVersion', 'customFrequency', 'customInterval', 'repeatWeekdays', 'location', 'latitude', 'longitude', 'alertOffsets'):
                 if field not in payload.item.model_fields_set and field in previous_item:
                     item[field] = previous_item[field]
+        if item.get('seriesID'):
+            parent_row = c.execute('SELECT body FROM items WHERE id=?', (item['seriesID'],)).fetchone()
+            parent = json.loads(parent_row['body']) if parent_row else None
+            if not parent or parent['deleted'] or parent['kind'] != 'event' or parent['recurrence'] == 'none' or parent.get('seriesVersion') != item.get('seriesVersion'):
+                raise HTTPException(409, {'message': 'The recurring series changed. Sync and try again.', 'current': json.loads(current['body']) if current else {**item, 'deleted': True}})
         item.update(revision=revision + 1, updatedAt=time.time(), updatedBy=actor['id'])
         body = json.dumps(item)
         c.execute('INSERT OR REPLACE INTO items VALUES(?,?,?)', (item['id'], item['revision'], body))

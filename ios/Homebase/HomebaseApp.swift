@@ -34,12 +34,18 @@ import EventKit
 }
 @main struct HomebaseApp: App {
     @UIApplicationDelegateAdaptor(AppDelegate.self) var delegate
+    @AppStorage("appearance") private var appearance = "system"
     @StateObject private var store = Store.shared
     @Environment(\.scenePhase) var phase
     var body: some Scene {
         WindowGroup {
             RootView().environmentObject(store).tint(Color("AccentColor"))
-                .task { if store.paired { await store.sync(); store.startLive(); await store.registerPush(); await CalendarBridge.shared.run(store: store) } }
+                .preferredColorScheme(appearance == "light" ? .light : appearance == "dark" ? .dark : nil)
+                .task {
+                    #if DEBUG
+                    if ProcessInfo.processInfo.arguments.contains("--native-series-smoke") { await NativeSeriesSmoke.run(store: store); return }
+                    #endif
+                    if store.paired { await store.sync(); store.startLive(); await store.registerPush(); await CalendarBridge.shared.run(store: store) } }
                 .task(id: phase) {
                     guard phase == .active else { return }
                     while !Task.isCancelled {

@@ -71,3 +71,17 @@ Household → Budget tracks income and expenses with an amount, currency, date, 
 ### Dinner instructions
 
 Dinner plans and saved meals have individual rows for Ingredients, Prep, and Cooking. Each section starts with one line; use + to append another and the minus button to remove a line. Blank rows are omitted when saving. Saved-meal selection and saving dinner favorites copy all three sections; adding groceries copies only ingredients. Existing meals and older offline caches remain compatible.
+
+### Calendar events and appearance
+
+Events support Starts/Ends, an All-Day toggle (off by default), Details, and Apple Maps place/address suggestions with an Open in Maps action. Addresses can be entered offline; suggestions require a network connection. All-day Ends is inclusive in the editor and stored as an exclusive next-day boundary for EventKit.
+
+Repeat defaults to Never. Choose daily, weekly, every two weeks, monthly, yearly, or Custom (every 1–99 days/weeks/months/years; custom weekly rules can select weekdays). An optional last day ends the series. Month-end and leap-day rules skip missing dates. Timed series retain their creation/edit time zone and local clock time across daylight-saving changes. Each occurrence can be edited/deleted separately, or the entire series can be edited/deleted. Schedule changes reset individual exceptions; title/details changes preserve them. Calendar projects the previous year through two years ahead offline; series outside that window retain an editable anchor.
+
+The iCloud bridge exports native EventKit recurrence rules and detached occurrence exceptions. Simple Apple-created series are adopted, including their individual edits. Simultaneous changes and missing occurrences require review. Apple-only advanced rules (such as nth-weekday patterns or count-based endings) remain in Apple Calendar; they are not silently flattened. Invitation-bearing series are not rebuilt by Homebase. Update all household clients before editing recurring series.
+
+An event can have two distinct alerts, from the event time up to one week before. Homebase queues the next 60 local event alerts and refreshes them when the app opens/syncs (including best-effort background refresh); notification permission is required. On the phone running the calendar bridge, synced events use Apple Calendar alerts instead of duplicate Homebase alerts. Other phones schedule Homebase alerts; if they also enable Apple Calendar notifications for that shared calendar, both apps may notify. Native repeating Apple Calendar alarms continue independently of Homebase's local scheduling window.
+
+Household → Settings → Appearance offers System, Light, and Dark. System is the default; changes apply immediately and persist per phone.
+
+Validation includes deterministic recurrence/alert tests, server validation and exception conflicts, native field round-trips, and a simulator-only EventKit lifecycle smoke test. Run the latter using a Debug app with `--preview --native-series-smoke` on a simulator with Calendar access; it creates and removes a disposable local calendar and writes `Library/Application Support/native-series-smoke.txt` in the simulator app container. It never runs in a distribution build or on a physical phone.
