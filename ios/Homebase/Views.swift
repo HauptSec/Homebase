@@ -50,22 +50,14 @@ struct TodayView: View {
     @EnvironmentObject var store: Store
     @State var editing: Item?
     @State private var dayOffset = 0
+    @State private var today = Calendar.current.startOfDay(for: Date())
     private var selectedDay: Date {
-        Calendar.current.date(byAdding: .day, value: dayOffset, to: Calendar.current.startOfDay(for: Date()))!
+        Calendar.current.date(byAdding: .day, value: dayOffset, to: today)!
     }
     private var isToday: Bool { dayOffset == 0 }
     private var dayItems: [Item] {
-        let calendar = Calendar.current
-        let start = selectedDay
-        let end = calendar.date(byAdding: .day, value: 1, to: start)!
         return store.items.filter { item in
-            guard item.kind != .meal, item.kind != .grocery, let when = item.when else { return false }
-            if isToday && item.done { return false }
-            if item.kind == .event {
-                let eventEnd = item.endDate ?? when.timeIntervalSince1970
-                return when < end && (eventEnd > start.timeIntervalSince1970 || (eventEnd == when.timeIntervalSince1970 && when >= start))
-            }
-            return calendar.isDate(when, inSameDayAs: start) || (isToday && when < start)
+            item.appearsOnHome(on: selectedDay, isToday: isToday)
         }.sorted { ($0.date ?? 0) < ($1.date ?? 0) }
     }
     var body: some View {
@@ -118,6 +110,13 @@ struct TodayView: View {
             }.listStyle(.insetGrouped).scrollContentBackground(.hidden).background(Color("Canvas")).navigationTitle("Homebase")
                 .toolbar { ToolbarItem(placement: .topBarTrailing) { Menu { ForEach(Kind.allCases.filter { $0 != .meal }) { kind in Button(kind.title, systemImage: kind.symbol) { editing = Item(kind: kind) } } } label: { Image(systemName: "plus") } } }
                 .refreshable { await store.sync(); await CalendarBridge.shared.run(store: store) }
+                .onAppear { today = Calendar.current.startOfDay(for: Date()) }
+                .onReceive(NotificationCenter.default.publisher(for: UIApplication.significantTimeChangeNotification)) { _ in
+                    today = Calendar.current.startOfDay(for: Date())
+                }
+                .onReceive(NotificationCenter.default.publisher(for: UIApplication.didBecomeActiveNotification)) { _ in
+                    today = Calendar.current.startOfDay(for: Date())
+                }
                 .sheet(item: $editing) { ItemEditSheet(item: $0) }
         }
     }
@@ -190,7 +189,6 @@ struct ItemList: View {
                         Text("Today & upcoming").tag(false)
                         Text("History").tag(true)
                     }.pickerStyle(.segmented)
-                    Text("US federal holidays and common observances are included automatically. Holidays are read-only and available offline.").font(.footnote).foregroundStyle(.secondary)
                 }
                 if kind == .dinner {
                     Section {

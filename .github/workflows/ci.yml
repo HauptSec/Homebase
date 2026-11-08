@@ -40,6 +40,10 @@ jobs:
         run: |
           swiftc ios/Homebase/Models.swift ios/Tests/BudgetTests.swift -o /tmp/homebase-budget-tests
           /tmp/homebase-budget-tests
+      - name: Verify home dinner expiry
+        run: |
+          swiftc ios/Homebase/Models.swift ios/Tests/HomeTests.swift -o /tmp/homebase-home-tests
+          /tmp/homebase-home-tests
       - name: Verify recurring events and native calendar fields
         run: |
           swiftc ios/Homebase/Models.swift ios/Homebase/EventRecurrence.swift ios/Homebase/CalendarEventFields.swift ios/Tests/RecurrenceTests.swift -o /tmp/homebase-recurrence-tests

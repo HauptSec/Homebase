@@ -88,6 +88,19 @@ struct Item: Codable, Identifiable, Equatable {
         try container.encode(updatedBy, forKey: .updatedBy)
     }
     var when: Date? { date.map { Date(timeIntervalSince1970: $0) } }
+    func appearsOnHome(on day: Date, isToday: Bool, calendar: Calendar = .current) -> Bool {
+        guard kind != .meal, kind != .grocery, let when else { return false }
+        if isToday && done { return false }
+        let start = calendar.startOfDay(for: day)
+        let end = calendar.date(byAdding: .day, value: 1, to: start)!
+        if kind == .event {
+            let eventEnd = endDate ?? when.timeIntervalSince1970
+            return when < end && (eventEnd > start.timeIntervalSince1970 || (eventEnd == when.timeIntervalSince1970 && when >= start))
+        }
+        // Dinner plans end with their calendar day; only bills and tasks carry forward.
+        return calendar.isDate(when, inSameDayAs: start)
+            || (isToday && (kind == .bill || kind == .task) && when < start)
+    }
     var isIncome: Bool { kind == .bill && budgetType == .income }
     var completionLabel: String { done ? "Reopen" : isIncome ? "Received" : "Paid" }
     var recurrenceLabel: String {
