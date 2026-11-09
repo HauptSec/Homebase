@@ -103,7 +103,7 @@ enum Keychain {
         if let root = series(for: item) { remove(root) }
     }
     func remove(_ item: Item) { var copy = item; copy.deleted = true; save(copy) }
-    func complete(_ item: Item) { var copy = item; copy.complete(); save(copy) }
+    func complete(_ item: Item) { var copy = item; copy.complete(owner: UserDefaults.standard.string(forKey: "ownerName"), deviceID: UserDefaults.standard.string(forKey: "deviceId")); save(copy) }
     func addIngredients(_ item: Item) {
         for name in item.ingredients where !name.trimmingCharacters(in: .whitespaces).isEmpty {
             var grocery = Item(kind: .grocery); grocery.title = name; save(grocery)
@@ -131,6 +131,7 @@ enum Keychain {
         try Keychain.save(result.token)
         UserDefaults.standard.set(endpoint, forKey: "endpoint")
         UserDefaults.standard.set(result.deviceId, forKey: "deviceId")
+        UserDefaults.standard.removeObject(forKey: "ownerName")
         paired = true
         await sync(); startLive()
         await registerPush()
@@ -166,6 +167,7 @@ enum Keychain {
                 let (data, response) = try await URLSession.shared.data(for: request("/v1/sync?after=\(cache.cursor)"))
                 try checked(response)
                 let page = try decoder.decode(SyncPage.self, from: data)
+                UserDefaults.standard.set(page.ownerName, forKey: "ownerName")
                 for item in page.items where !cache.queue.contains(where: { $0.item.id == item.id }) && !cache.conflicts.contains(where: { $0.id == item.id }) { upsert(item) }
                 cache.cursor = page.cursor; more = page.hasMore
                 guard persist() else { return }

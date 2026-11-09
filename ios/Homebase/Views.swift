@@ -129,6 +129,7 @@ struct ItemRow: View {
             VStack(alignment: .leading, spacing: 5) {
                 Text(item.title).strikethrough(item.done).foregroundStyle(item.done ? .secondary : .primary)
                 if let when = item.when { Text(when, format: item.kind == .event && !item.allDay ? .dateTime.year().month(.abbreviated).day().hour().minute() : .dateTime.year().month(.abbreviated).day()).font(.caption).foregroundStyle(.secondary) }
+                if item.kind == .task && item.done { TaskCompletionDetails(item: item) }
                 if item.seriesID != nil { Label("Repeating event", systemImage: "repeat").font(.caption).foregroundStyle(.secondary) }
                 if item.kind == .bill { Text("\(item.isIncome ? "Income" : "Expense") · \(item.recurrenceLabel)").font(.caption).foregroundStyle(.secondary) }
                 if item.allDay { Text("All day").font(.caption).foregroundStyle(.secondary) }
@@ -145,6 +146,17 @@ struct ItemRow: View {
         }.padding(.vertical, 6)
     }
 }
+struct TaskCompletionDetails: View {
+    let item: Item
+    var body: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            if let name = item.completedBy { Text("Completed by \(name)") }
+            if let timestamp = item.completedAt {
+                Text(Date(timeIntervalSince1970: timestamp), format: .dateTime.year().month(.abbreviated).day().hour().minute())
+            } else { Text("Completion details unavailable") }
+        }.font(.caption).foregroundStyle(.secondary)
+    }
+}
 struct ItemList: View {
     @EnvironmentObject var store: Store
     let kind: Kind
@@ -157,7 +169,7 @@ struct ItemList: View {
     var values: [Item] {
         store.items(kind).filter { item in
             let match = search.isEmpty || item.title.localizedCaseInsensitiveContains(search) || item.notes.localizedCaseInsensitiveContains(search)
-            if kind == .bill { return match && (showHistory ? item.done : !item.done) }
+            if kind == .bill || kind == .task { return match && (showHistory ? item.done : !item.done) }
             if kind == .event {
                 guard let start = item.when else { return false }
                 // End dates are exclusive; a multi-day event remains visible through its final day.
@@ -167,6 +179,7 @@ struct ItemList: View {
             if kind == .dinner { return match && (item.when.map { $0 >= week && $0 < Calendar.current.date(byAdding: .day, value: 7, to: week)! } ?? false) }
             return match
         }.sorted {
+            if kind == .task && showHistory { return ($0.completedAt ?? 0) > ($1.completedAt ?? 0) }
             if kind == .event && showHistory { return ($0.date ?? 0) > ($1.date ?? 0) }
             if $0.done != $1.done { return !$0.done }
             if kind == .grocery { return $0.title.localizedStandardCompare($1.title) == .orderedAscending }
@@ -177,6 +190,9 @@ struct ItemList: View {
     var body: some View {
         NavigationStack {
             List {
+                if kind == .task {
+                    Button(showHistory ? "Back to active tasks" : "Completed tasks", systemImage: showHistory ? "checklist" : "clock.arrow.circlepath") { showHistory.toggle() }
+                }
                 if kind == .bill {
                     Picker("Budget range", selection: $showHistory) {
                         Text("Upcoming").tag(false)
@@ -211,10 +227,12 @@ struct ItemList: View {
                         }
                     }
                 } else { rows(values) }
-                if values.isEmpty && kind == .event {
+                if values.isEmpty && kind == .task {
+                    ContentUnavailableView(search.isEmpty ? (showHistory ? "No completed tasks" : "No active tasks") : "No matching tasks", systemImage: "checkmark.circle", description: Text(showHistory ? "Tasks you finish will appear here." : "Tap + to add a task."))
+                } else if values.isEmpty && kind == .event {
                     ContentUnavailableView(search.isEmpty ? (showHistory ? "No past events" : "No upcoming events") : "No matching events", systemImage: "calendar", description: Text(search.isEmpty ? (showHistory ? "Past events will appear here, newest first." : "Tap + to add an event.") : "Try a different search or calendar range."))
                 } else if values.isEmpty && kind != .dinner { ContentUnavailableView("Room for \(kind.title.lowercased())", systemImage: kind.symbol, description: Text("Tap + to add your first item.")) }
-            }.scrollContentBackground(.hidden).background(Color("Canvas")).navigationTitle(kind.title).searchable(text: $search)
+            }.scrollContentBackground(.hidden).background(Color("Canvas")).navigationTitle(kind == .task && showHistory ? "Completed tasks" : kind.title).searchable(text: $search)
                 .toolbar { ToolbarItem(placement: .topBarTrailing) { Button("Add", systemImage: "plus") { editing = Item(kind: kind) } } }
                 .onAppear { calendarToday = Calendar.current.startOfDay(for: Date()) }
                 .onReceive(NotificationCenter.default.publisher(for: UIApplication.significantTimeChangeNotification)) { _ in
@@ -444,6 +462,7 @@ struct ItemEditor: View {
                     Section { Button(item.isRecurringSeries ? "Delete entire series" : "Delete event", role: .destructive) { confirmingDelete = true } }
                 }
                 if item.kind == .bill && !item.paidDates.isEmpty { Section(item.isIncome ? "Received history" : "Payment history") { ForEach(item.paidDates.indices, id: \.self) { i in Text(Date(timeIntervalSince1970: item.paidDates[i]), format: .dateTime.year().month().day()) } } }
+                if item.kind == .task && item.done { Section("Completion") { TaskCompletionDetails(item: item) } }
                 if item.revision > 0 && [.task, .bill, .grocery].contains(item.kind) {
                     Section { Button(item.kind == .bill ? (item.done ? "Reopen" : item.isIncome ? "Mark received" : "Mark paid") : item.done ? "Mark incomplete" : "Mark complete") { store.complete(item); dismiss() } }
                 }

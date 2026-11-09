@@ -41,12 +41,15 @@ struct Item: Codable, Identifiable, Equatable {
     var paidDates: [Double] = []
     var allDay = false
     var done = false
+    var completedAt: Double?
+    var completedBy: String?
+    var completedByDevice: String?
     var deleted = false
     var revision = 0
     var updatedAt: Double = 0
     var updatedBy = ""
     enum CodingKeys: String, CodingKey {
-        case id, kind, title, notes, date, endDate, reminderAt, store, calendarKey, quantity, budgetType, amountCents, currency, recurrence, customFrequency, customInterval, repeatWeekdays, location, latitude, longitude, alertOffsets, recurrenceUntil, recurrenceTimeZone, seriesID, occurrenceDate, seriesVersion, ingredients, prepSteps, cookingSteps, paidDates, allDay, done, deleted, revision, updatedAt, updatedBy
+        case id, kind, title, notes, date, endDate, reminderAt, store, calendarKey, quantity, budgetType, amountCents, currency, recurrence, customFrequency, customInterval, repeatWeekdays, location, latitude, longitude, alertOffsets, recurrenceUntil, recurrenceTimeZone, seriesID, occurrenceDate, seriesVersion, ingredients, prepSteps, cookingSteps, paidDates, allDay, done, completedAt, completedBy, completedByDevice, deleted, revision, updatedAt, updatedBy
     }
     func encode(to encoder: Encoder) throws {
         var container = encoder.container(keyedBy: CodingKeys.self)
@@ -82,6 +85,9 @@ struct Item: Codable, Identifiable, Equatable {
         try container.encode(paidDates, forKey: .paidDates)
         try container.encode(allDay, forKey: .allDay)
         try container.encode(done, forKey: .done)
+        try container.encode(completedAt, forKey: .completedAt)
+        try container.encode(completedBy, forKey: .completedBy)
+        try container.encode(completedByDevice, forKey: .completedByDevice)
         try container.encode(deleted, forKey: .deleted)
         try container.encode(revision, forKey: .revision)
         try container.encode(updatedAt, forKey: .updatedAt)
@@ -119,7 +125,14 @@ struct Item: Codable, Identifiable, Equatable {
     var recurrenceLabel: String {
         switch recurrence { case "daily": "Daily"; case "weekly": "Weekly"; case "biweekly": "Every 2 weeks"; case "monthly": "Monthly"; case "yearly": "Yearly"; case "custom": "Custom"; default: "One-time" }
     }
-    mutating func complete() {
+    mutating func complete(now: Date = Date(), owner: String? = nil, deviceID: String? = nil) {
+        if kind == .task {
+            done.toggle()
+            completedAt = done ? now.timeIntervalSince1970 : nil
+            completedBy = done ? owner : nil
+            completedByDevice = done ? deviceID : nil
+            return
+        }
         if kind == .bill && !done { paidDates.append(Date().timeIntervalSince1970) }
         if recurrence != "none", let when {
             let component: Calendar.Component = ["weekly", "biweekly"].contains(recurrence) ? .weekOfYear : recurrence == "monthly" ? .month : .year
@@ -137,7 +150,7 @@ struct Mutation: Codable, Identifiable {
     var item: Item
     var id: UUID { mutationId }
 }
-struct SyncPage: Codable { let cursor: Int; let items: [Item]; let hasMore: Bool }
+struct SyncPage: Codable { let cursor: Int; let items: [Item]; let hasMore: Bool; let ownerName: String? }
 struct MutationResult: Codable { let item: Item }
 struct PairResult: Codable { let token: String; let deviceId: String }
 struct ConflictEnvelope: Codable { let detail: ConflictDetail }

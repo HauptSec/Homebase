@@ -1,7 +1,7 @@
 import Foundation
 
 @main struct HomeTests {
-    static func main() {
+    static func main() throws {
         var calendar = Calendar(identifier: .gregorian)
         calendar.timeZone = TimeZone(identifier: "America/Los_Angeles")!
         // Cover ordinary midnight, both DST transitions, and the year boundary.
@@ -45,6 +45,22 @@ import Foundation
             precondition(event.appearsOnHome(on: tomorrow, isToday: true, calendar: calendar))
         }
         precondition(!Item(kind: .dinner).appearsOnHome(on: Date(), isToday: true))
+        var task = Item(kind: .task)
+        let completion = Date(timeIntervalSince1970: 1794268800)
+        task.complete(now: completion, owner: "Laura", deviceID: "laura-phone")
+        precondition(task.done && task.completedAt == completion.timeIntervalSince1970)
+        precondition(task.completedBy == "Laura" && task.completedByDevice == "laura-phone")
+        let restored = try JSONDecoder().decode(Item.self, from: JSONEncoder().encode(task))
+        precondition(restored == task)
+        var legacy = try JSONSerialization.jsonObject(with: JSONEncoder().encode(task)) as! [String: Any]
+        for key in ["completedAt", "completedBy", "completedByDevice"] { legacy.removeValue(forKey: key) }
+        let oldTask = try JSONDecoder().decode(Item.self, from: JSONSerialization.data(withJSONObject: legacy))
+        precondition(oldTask.done && oldTask.completedAt == nil && oldTask.completedBy == nil)
+        task.complete()
+        precondition(!task.done && task.completedAt == nil && task.completedBy == nil && task.completedByDevice == nil)
+        task.complete(now: completion.addingTimeInterval(60), owner: "Alex", deviceID: "alex-phone")
+        precondition(task.done && task.completedBy == "Alex" && task.completedAt == completion.timeIntervalSince1970 + 60)
+        print("Task completion passed: offline timestamp, attribution, reopening and cache compatibility")
         print("Home tests passed: event draft dates, dinner expiry, history, DST, year boundary, overdue tasks/bills and event overlap")
     }
 }

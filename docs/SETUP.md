@@ -151,3 +151,16 @@ docker compose up -d api
 ```
 
 A database rollback can put phone cursors ahead of restored history. **Do not reconnect phones after restore until their cache has been reset and any pending edits have been preserved.** This initial version does not automate rollback-aware client recovery; use a fresh app install/pairing after preserving any offline data. A restore drill must use disposable test data.
+
+## Task completion identity
+
+Task completion records include the tap time, the completing device ID, and its owner (Alex or Laura). The server determines the owner from the authenticated device, preserves completion details during later edits, and clears them when a task is reopened. Offline completions keep their original tap time; older app versions use the server receipt time. Tasks completed before tracking was introduced show that completion details are unavailable.
+
+Named devices such as “Alex’s iPhone” are recognized automatically. For generically named phones or replacement devices, assign an owner locally on the server:
+
+```sh
+docker compose exec api python -m server.manage devices
+docker compose exec api python -m server.manage device-owner DEVICE_ID Laura
+```
+
+Use `Alex` or `Laura`. Explicit assignments override the device name. Unassigned, unrecognized devices cannot sync new task completions until an owner is assigned. The app caches the owner during sync for offline display; the server verifies attribution when syncing.

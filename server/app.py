@@ -49,6 +49,18 @@ def initialize():
         CREATE TABLE IF NOT EXISTS calendar_bridge(singleton INTEGER PRIMARY KEY CHECK(singleton=1),device_id TEXT NOT NULL);
         CREATE TABLE IF NOT EXISTS rate_limits(bucket TEXT PRIMARY KEY,starts REAL NOT NULL,count INTEGER NOT NULL);
         ''')
+        if 'owner_name' not in {row['name'] for row in c.execute('PRAGMA table_info(devices)')}:
+            c.execute('ALTER TABLE devices ADD COLUMN owner_name TEXT')
+
+
+def device_owner(actor):
+    if actor['owner_name'] in ('Alex', 'Laura'):
+        return actor['owner_name']
+    name = actor['name'].casefold()
+    for owner in ('Alex', 'Laura'):
+        if name == owner.lower() or name.startswith((owner.lower() + '’', owner.lower() + "'", owner.lower() + ' ')):
+            return owner
+    return None
 
 
 def digest(value):
@@ -120,6 +132,9 @@ class Item(BaseModel):
     paidDates: list[float] = Field(default_factory=list, max_length=10000)
     allDay: bool = False
     done: bool = False
+    completedAt: float | None = Field(default=None, ge=0)
+    completedBy: str | None = Field(default=None, max_length=100)
+    completedByDevice: str | None = Field(default=None, max_length=100)
     deleted: bool = False
     revision: int = Field(default=0, ge=0)
     updatedAt: float = 0
@@ -279,7 +294,7 @@ def sync(after: int = 0, actor=Depends(device)):
         raise HTTPException(422, 'Invalid cursor')
     with db() as c:
         rows = c.execute('SELECT seq,body FROM changes WHERE seq>? ORDER BY seq LIMIT 500', (after,)).fetchall()
-    return {'cursor': rows[-1]['seq'] if rows else after, 'items': [json.loads(r['body']) for r in rows], 'hasMore': len(rows) == 500}
+    return {'cursor': rows[-1]['seq'] if rows else after, 'items': [json.loads(r['body']) for r in rows], 'hasMore': len(rows) == 500, 'ownerName': device_owner(actor)}
 
 
 @app.post('/v1/mutations')
@@ -307,6 +322,22 @@ def mutate(payload: Mutation, actor=Depends(device)):
             parent = json.loads(parent_row['body']) if parent_row else None
             if not parent or parent['deleted'] or parent['kind'] != 'event' or parent['recurrence'] == 'none' or parent.get('seriesVersion') != item.get('seriesVersion'):
                 raise HTTPException(409, {'message': 'The recurring series changed. Sync and try again.', 'current': json.loads(current['body']) if current else {**item, 'deleted': True}})
+        previous_item = json.loads(current['body']) if current else {}
+        if item['kind'] == 'task' and item['done']:
+            if not previous_item.get('done'):
+                owner = device_owner(actor)
+                if owner is None:
+                    raise HTTPException(422, 'Assign this device to Alex or Laura before completing tasks')
+                item['completedAt'] = min(item.get('completedAt') or time.time(), time.time())
+                item['completedBy'] = owner
+                item['completedByDevice'] = actor['id']
+            else:
+                # Completion attribution is immutable during unrelated edits, including old clients.
+                for field in ('completedAt', 'completedBy', 'completedByDevice'):
+                    item[field] = previous_item.get(field)
+        else:
+            for field in ('completedAt', 'completedBy', 'completedByDevice'):
+                item[field] = None
         item.update(revision=revision + 1, updatedAt=time.time(), updatedBy=actor['id'])
         body = json.dumps(item)
         c.execute('INSERT OR REPLACE INTO items VALUES(?,?,?)', (item['id'], item['revision'], body))

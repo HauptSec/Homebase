@@ -30,6 +30,60 @@ class APITests(unittest.TestCase):
     def mutation(self, **fields):
         return {'mutationId': str(uuid4()), 'baseRevision': 0, 'item': {'id': str(uuid4()), 'kind': 'grocery', 'title': 'Milk', **fields}}
 
+    def test_task_completion_attribution_and_history(self):
+        with module.db() as c:
+            c.execute("UPDATE devices SET owner_name='Laura' WHERE name='Partner'")
+        self.assertEqual(self.client.get('/v1/sync', headers=self.b).json()['ownerName'], 'Laura')
+        data = self.mutation(kind='task', title='Laundry')
+        item = self.client.post('/v1/mutations', headers=self.a, json=data).json()['item']
+
+        def save(item, headers):
+            response = self.client.post('/v1/mutations', headers=headers, json={
+                'mutationId': str(uuid4()), 'baseRevision': item['revision'], 'item': item})
+            self.assertEqual(response.status_code, 200, response.text)
+            return response.json()['item']
+
+        completed = time.time() - 3600  # Offline completion is recorded at tap time.
+        item.update(done=True, completedAt=completed, completedBy='Alex', completedByDevice='spoof')
+        item = save(item, self.b)
+        self.assertEqual(item['completedBy'], 'Laura')
+        self.assertEqual(item['completedAt'], completed)
+        with module.db() as c:
+            laura = c.execute("SELECT id FROM devices WHERE name='Partner'").fetchone()['id']
+        self.assertEqual(item['completedByDevice'], laura)
+        # Older apps omit metadata; unrelated edits must preserve the original completion.
+        for field in ('completedAt', 'completedBy', 'completedByDevice'):
+            item.pop(field)
+        item['notes'] = 'Folded'
+        item = save(item, self.a)
+        self.assertEqual(item['completedAt'], completed)
+        self.assertEqual(item['completedBy'], 'Laura')
+        item.update(completedBy='Alex', completedAt=1)
+        item = save(item, self.a)
+        self.assertEqual(item['completedBy'], 'Laura')
+        self.assertEqual(item['completedAt'], completed)
+        item['done'] = False
+        item = save(item, self.a)
+        self.assertIsNone(item['completedAt'])
+        self.assertIsNone(item['completedBy'])
+        self.assertIsNone(item['completedByDevice'])
+        # An older app completing a task still gets authenticated attribution and server time.
+        item['done'] = True
+        item = save(item, self.a)
+        self.assertEqual(item['completedBy'], 'Alex')
+        self.assertGreater(item['completedAt'], completed)
+        synced = self.client.get('/v1/sync', headers=self.b).json()['items'][-1]
+        self.assertEqual(synced, item)
+
+    def test_task_completion_retry_and_unknown_device(self):
+        data = self.mutation(kind='task', done=True)
+        self.assertEqual(self.client.post('/v1/mutations', headers=self.b, json=data).status_code, 422)
+        first = self.client.post('/v1/mutations', headers=self.a, json=data)
+        retry = self.client.post('/v1/mutations', headers=self.a, json=data)
+        self.assertEqual(first.status_code, 200)
+        self.assertEqual(first.json(), retry.json())
+        module.initialize()  # Owner migration is safe on existing databases.
+
     def test_auth_and_revocation(self):
         self.assertEqual(self.client.get('/v1/sync').status_code, 401)
         with module.db() as c:

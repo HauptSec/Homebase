@@ -11,6 +11,9 @@ parser = argparse.ArgumentParser()
 sub = parser.add_subparsers(dest='command', required=True)
 sub.add_parser('invite')
 sub.add_parser('devices')
+owner = sub.add_parser('device-owner')
+owner.add_argument('device_id')
+owner.add_argument('name', choices=['Alex', 'Laura'])
 sub.add_parser('install-link')
 sub.add_parser('release-info')
 release = sub.add_parser('publish-release')
@@ -30,7 +33,13 @@ if args.command == 'invite':
     print('One use; expires in 10 minutes.')
 elif args.command == 'devices':
     with db() as c:
-        print(json.dumps([dict(r) for r in c.execute('SELECT id,name,revoked FROM devices')], indent=2))
+        print(json.dumps([dict(r) for r in c.execute('SELECT id,name,revoked,owner_name FROM devices')], indent=2))
+elif args.command == 'device-owner':
+    with db() as c:
+        result = c.execute('UPDATE devices SET owner_name=? WHERE id=?', (args.name, args.device_id))
+        if result.rowcount != 1:
+            raise SystemExit('Device not found')
+    print('Device owner saved.')
 elif args.command == 'revoke':
     with db() as c:
         c.execute('UPDATE devices SET revoked=1,apns_token=NULL WHERE id=?', (args.device_id,))
