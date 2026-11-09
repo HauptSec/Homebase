@@ -88,6 +88,19 @@ struct Item: Codable, Identifiable, Equatable {
         try container.encode(updatedBy, forKey: .updatedBy)
     }
     var when: Date? { date.map { Date(timeIntervalSince1970: $0) } }
+    static func homeDraft(kind: Kind, viewing day: Date, now: Date = Date(), calendar: Calendar = .current) -> Item {
+        var item = Item(kind: kind)
+        if kind == .event {
+            let targetDay = calendar.startOfDay(for: day)
+            if targetDay > calendar.startOfDay(for: now) {
+                let time = calendar.dateComponents([.hour, .minute, .second], from: now)
+                item.date = calendar.date(bySettingHour: time.hour!, minute: time.minute!, second: time.second!, of: targetDay)!.timeIntervalSince1970
+            } else {
+                item.date = now.timeIntervalSince1970
+            }
+        }
+        return item
+    }
     func appearsOnHome(on day: Date, isToday: Bool, calendar: Calendar = .current) -> Bool {
         guard kind != .meal, kind != .grocery, let when else { return false }
         if isToday && done { return false }

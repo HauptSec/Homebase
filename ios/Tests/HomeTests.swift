@@ -11,6 +11,16 @@ import Foundation
                            DateComponents(year: 2026, month: 12, day: 31)] {
             let day = calendar.date(from: components)!
             let tomorrow = calendar.date(byAdding: .day, value: 1, to: day)!
+            let now = calendar.date(bySettingHour: 14, minute: 25, second: 0, of: day)!
+            let futureEvent = Item.homeDraft(kind: .event, viewing: tomorrow, now: now, calendar: calendar)
+            precondition(calendar.isDate(futureEvent.when!, inSameDayAs: tomorrow))
+            precondition(calendar.component(.hour, from: futureEvent.when!) == 14)
+            precondition(calendar.component(.minute, from: futureEvent.when!) == 25)
+            precondition(Item.homeDraft(kind: .event, viewing: day, now: now, calendar: calendar).when == now)
+            precondition(Item.homeDraft(kind: .event, viewing: day, now: tomorrow, calendar: calendar).when == tomorrow)
+            for kind in Kind.allCases where kind != .event {
+                precondition(Item.homeDraft(kind: kind, viewing: tomorrow, now: now, calendar: calendar).date == nil)
+            }
             var dinner = Item(kind: .dinner)
             dinner.date = day.timeIntervalSince1970
             precondition(dinner.appearsOnHome(on: tomorrow.addingTimeInterval(-1), isToday: true, calendar: calendar))
@@ -35,6 +45,6 @@ import Foundation
             precondition(event.appearsOnHome(on: tomorrow, isToday: true, calendar: calendar))
         }
         precondition(!Item(kind: .dinner).appearsOnHome(on: Date(), isToday: true))
-        print("Home tests passed: dinner expiry, history, DST, year boundary, overdue tasks/bills and event overlap")
+        print("Home tests passed: event draft dates, dinner expiry, history, DST, year boundary, overdue tasks/bills and event overlap")
     }
 }

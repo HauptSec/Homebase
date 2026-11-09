@@ -108,7 +108,7 @@ struct TodayView: View {
                     }
                 }
             }.listStyle(.insetGrouped).scrollContentBackground(.hidden).background(Color("Canvas")).navigationTitle("Homebase")
-                .toolbar { ToolbarItem(placement: .topBarTrailing) { Menu { ForEach(Kind.allCases.filter { $0 != .meal }) { kind in Button(kind.title, systemImage: kind.symbol) { editing = Item(kind: kind) } } } label: { Image(systemName: "plus") } } }
+                .toolbar { ToolbarItem(placement: .topBarTrailing) { Menu { ForEach(Kind.allCases.filter { $0 != .meal }) { kind in Button(kind.title, systemImage: kind.symbol) { editing = Item.homeDraft(kind: kind, viewing: selectedDay) } } } label: { Image(systemName: "plus") } } }
                 .refreshable { await store.sync(); await CalendarBridge.shared.run(store: store) }
                 .onAppear { today = Calendar.current.startOfDay(for: Date()) }
                 .onReceive(NotificationCenter.default.publisher(for: UIApplication.significantTimeChangeNotification)) { _ in
