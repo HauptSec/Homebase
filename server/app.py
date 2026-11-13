@@ -335,6 +335,13 @@ def mutate(payload: Mutation, actor=Depends(device)):
                 # Completion attribution is immutable during unrelated edits, including old clients.
                 for field in ('completedAt', 'completedBy', 'completedByDevice'):
                     item[field] = previous_item.get(field)
+        elif item['kind'] == 'grocery' and item['done']:
+            if previous_item.get('done'):
+                item['completedAt'] = previous_item.get('completedAt')
+            else:
+                now = time.time()
+                item['completedAt'] = min(item.get('completedAt') or now, now)
+            item['completedBy'] = item['completedByDevice'] = None
         else:
             for field in ('completedAt', 'completedBy', 'completedByDevice'):
                 item[field] = None

@@ -123,9 +123,12 @@ struct TodayView: View {
 }
 struct ItemRow: View {
     let item: Item
+    var showsIcon = true
     var body: some View {
         HStack(spacing: 14) {
-            Image(systemName: item.done ? "checkmark.circle.fill" : item.kind.symbol).font(.title3).foregroundStyle(item.done ? Color.secondary : Color.accentColor).frame(width: 26)
+            if showsIcon {
+                Image(systemName: item.done ? "checkmark.circle.fill" : item.kind.symbol).font(.title3).foregroundStyle(item.done ? Color.secondary : Color.accentColor).frame(width: 26)
+            }
             VStack(alignment: .leading, spacing: 5) {
                 Text(item.title).strikethrough(item.done).foregroundStyle(item.done ? .secondary : .primary)
                 if let when = item.when { Text(when, format: item.kind == .event && !item.allDay ? .dateTime.year().month(.abbreviated).day().hour().minute() : .dateTime.year().month(.abbreviated).day()).font(.caption).foregroundStyle(.secondary) }
@@ -169,6 +172,7 @@ struct ItemList: View {
     var values: [Item] {
         store.items(kind).filter { item in
             let match = search.isEmpty || item.title.localizedCaseInsensitiveContains(search) || item.notes.localizedCaseInsensitiveContains(search)
+            if kind == .grocery { return match && item.visibleOnGroceryList(on: calendarToday) }
             if kind == .bill || kind == .task { return match && (showHistory ? item.done : !item.done) }
             if kind == .event {
                 guard let start = item.when else { return false }
@@ -186,7 +190,6 @@ struct ItemList: View {
             return ($0.date ?? .greatestFiniteMagnitude) < ($1.date ?? .greatestFiniteMagnitude)
         }
     }
-    var stores: [String] { Array(Set(values.map { $0.store.trimmingCharacters(in: .whitespaces) })).sorted { a, b in a.isEmpty || (!b.isEmpty && a.localizedStandardCompare(b) == .orderedAscending) } }
     var body: some View {
         NavigationStack {
             List {
@@ -216,7 +219,17 @@ struct ItemList: View {
                     }
                 }
                 if kind == .grocery {
-                    ForEach(stores, id: \.self) { name in Section(name.isEmpty ? "General" : name) { rows(values.filter { $0.store.trimmingCharacters(in: .whitespaces) == name }) } }
+                    let groceries = values
+                    let groups = Dictionary(grouping: groceries.filter { !$0.done }) {
+                        $0.store.trimmingCharacters(in: .whitespaces)
+                    }
+                    ForEach(groups.keys.sorted { $0.localizedStandardCompare($1) == .orderedAscending }, id: \.self) { name in
+                        Section(name.isEmpty ? "General" : name) { rows(groups[name] ?? []) }
+                    }
+                    let completed = groceries.filter(\.done).sorted { ($0.completedAt ?? 0) > ($1.completedAt ?? 0) }
+                    if !completed.isEmpty {
+                        Section("Completed today") { rows(completed) }
+                    }
                 } else if kind == .dinner {
                     ForEach(0..<7, id: \.self) { offset in
                         let day = Calendar.current.date(byAdding: .day, value: offset, to: week)!
@@ -255,7 +268,19 @@ struct ItemList: View {
     @ViewBuilder func rows(_ items: [Item]) -> some View {
         ForEach(items) { item in
             if item.isHoliday { ItemRow(item: item) } else {
-            Button { editing = item } label: { ItemRow(item: item) }.buttonStyle(.plain)
+            HStack {
+                if kind == .grocery {
+                    Button { store.complete(item) } label: {
+                        Image(systemName: item.done ? "checkmark.circle.fill" : "circle")
+                            .font(.title3).frame(width: 44, height: 44)
+                    }
+                    .buttonStyle(.borderless)
+                    .accessibilityLabel(item.done ? "Undo completion of \(item.title)" : "Check off \(item.title)")
+                }
+                Button { editing = item } label: {
+                    ItemRow(item: item, showsIcon: kind != .grocery).contentShape(Rectangle())
+                }.buttonStyle(.plain)
+            }
                 .swipeActions(edge: .trailing) { Button("Delete", role: .destructive) {
                     if item.seriesID != nil { deletingEvent = item } else { store.remove(item) }
                 } }

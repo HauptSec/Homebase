@@ -21,6 +21,14 @@ import Foundation
             for kind in Kind.allCases where kind != .event {
                 precondition(Item.homeDraft(kind: kind, viewing: tomorrow, now: now, calendar: calendar).date == nil)
             }
+            var grocery = Item(kind: .grocery)
+            let checkout = tomorrow.addingTimeInterval(-1)
+            grocery.complete(now: checkout)
+            precondition(grocery.visibleOnGroceryList(on: checkout, calendar: calendar))
+            precondition(!grocery.visibleOnGroceryList(on: tomorrow, calendar: calendar))
+            grocery.complete(now: checkout)
+            precondition(!grocery.done && grocery.completedAt == nil)
+            precondition(grocery.visibleOnGroceryList(on: tomorrow, calendar: calendar))
             var dinner = Item(kind: .dinner)
             dinner.date = day.timeIntervalSince1970
             precondition(dinner.appearsOnHome(on: tomorrow.addingTimeInterval(-1), isToday: true, calendar: calendar))

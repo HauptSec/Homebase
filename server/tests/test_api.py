@@ -84,6 +84,26 @@ class APITests(unittest.TestCase):
         self.assertEqual(first.json(), retry.json())
         module.initialize()  # Owner migration is safe on existing databases.
 
+    def test_grocery_completion_sync_and_undo(self):
+        bought = time.time() - 7200
+        data = self.mutation(done=True, completedAt=bought)
+        def save():
+            response = self.client.post('/v1/mutations', headers=self.b, json=data)
+            self.assertEqual(response.status_code, 200, response.text)
+            item = response.json()['item']
+            data.update(baseRevision=item['revision'], mutationId=str(uuid4()), item=item)
+            return item
+        self.assertEqual(save()['completedAt'], bought)
+        data['item'].pop('completedAt')
+        data['item']['notes'] = 'Different size'
+        self.assertEqual(save()['completedAt'], bought)
+        data['item']['done'] = False
+        self.assertIsNone(save()['completedAt'])
+        data['item']['done'] = True
+        self.assertGreater(save()['completedAt'], bought)
+        latest = self.client.get('/v1/sync', headers=self.a).json()['items'][-1]
+        self.assertEqual(latest, data['item'])
+
     def test_auth_and_revocation(self):
         self.assertEqual(self.client.get('/v1/sync').status_code, 401)
         with module.db() as c:

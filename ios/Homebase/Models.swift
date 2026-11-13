@@ -125,7 +125,17 @@ struct Item: Codable, Identifiable, Equatable {
     var recurrenceLabel: String {
         switch recurrence { case "daily": "Daily"; case "weekly": "Weekly"; case "biweekly": "Every 2 weeks"; case "monthly": "Monthly"; case "yearly": "Yearly"; case "custom": "Custom"; default: "One-time" }
     }
+    func visibleOnGroceryList(on day: Date, calendar: Calendar = .current) -> Bool {
+        guard done else { return true }
+        guard let completedAt else { return false }
+        return calendar.isDate(Date(timeIntervalSince1970: completedAt), inSameDayAs: day)
+    }
     mutating func complete(now: Date = Date(), owner: String? = nil, deviceID: String? = nil) {
+        if kind == .grocery {
+            done.toggle()
+            completedAt = done ? now.timeIntervalSince1970 : nil
+            return
+        }
         if kind == .task {
             done.toggle()
             completedAt = done ? now.timeIntervalSince1970 : nil
