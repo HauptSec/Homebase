@@ -164,3 +164,13 @@ docker compose exec api python -m server.manage device-owner DEVICE_ID Laura
 ```
 
 Use `Alex` or `Laura`. Explicit assignments override the device name. Unassigned, unrecognized devices cannot sync new task completions until an owner is assigned. The app caches the owner during sync for offline display; the server verifies attribution when syncing.
+
+## Shared task reminders
+
+Deploy the updated server before installing the updated iOS app. Tasks support Alex, Laura, or no assigned owner. The active task list groups Alex, Laura, then Unassigned, sorting each group oldest first by due date when present or date added otherwise. Existing creation dates are backfilled from the first recorded server change.
+
+In Apple Reminders, create an iCloud list named **Homebase - Tasks** and share it with the family. On one paired phone, open Homebase Settings → Shared Apple Reminders → Choose Homebase - Tasks, grant Reminders access, and select that list. Only one phone can bridge reminders; the calendar bridge can run on a different phone. Family invitations are managed in Apple Reminders.
+
+The bridge syncs titles, notes, due dates, absolute reminder alerts, completion, and deletions. Owners are stored as a trailing `Homebase owner: Alex`, `Laura`, or `Unassigned` line in reminder notes; this is separate from Apple's native assignments. Completion imported from Apple is labeled “Completed in Apple Reminders” because EventKit does not identify the person who completed it. Native recurrence, subtasks, and native assignments are not mapped into Homebase. Existing Apple recurrence rules are preserved when editing supported fields.
+
+Sync runs on app activation, during foreground refresh, on EventKit changes, and when iOS permits background refresh. Settings includes a manual sync button. Simultaneous edits and missing reminders require review in Settings; temporary iCloud omissions never automatically delete Homebase tasks. Disconnecting leaves both copies intact. Dinners are excluded from this list.

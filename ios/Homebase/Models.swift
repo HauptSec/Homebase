@@ -11,6 +11,9 @@ enum BudgetType: String, Codable { case expense, income }
 struct Item: Codable, Identifiable, Equatable {
     var id = UUID()
     var kind: Kind
+    var assignedOwner: String?
+    var createdAt: Double?
+    var reminderKey: String?
     var title = ""
     var notes = ""
     var date: Double?
@@ -49,10 +52,13 @@ struct Item: Codable, Identifiable, Equatable {
     var updatedAt: Double = 0
     var updatedBy = ""
     enum CodingKeys: String, CodingKey {
-        case id, kind, title, notes, date, endDate, reminderAt, store, calendarKey, quantity, budgetType, amountCents, currency, recurrence, customFrequency, customInterval, repeatWeekdays, location, latitude, longitude, alertOffsets, recurrenceUntil, recurrenceTimeZone, seriesID, occurrenceDate, seriesVersion, ingredients, prepSteps, cookingSteps, paidDates, allDay, done, completedAt, completedBy, completedByDevice, deleted, revision, updatedAt, updatedBy
+        case assignedOwner, createdAt, reminderKey, id, kind, title, notes, date, endDate, reminderAt, store, calendarKey, quantity, budgetType, amountCents, currency, recurrence, customFrequency, customInterval, repeatWeekdays, location, latitude, longitude, alertOffsets, recurrenceUntil, recurrenceTimeZone, seriesID, occurrenceDate, seriesVersion, ingredients, prepSteps, cookingSteps, paidDates, allDay, done, completedAt, completedBy, completedByDevice, deleted, revision, updatedAt, updatedBy
     }
     func encode(to encoder: Encoder) throws {
         var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(assignedOwner, forKey: .assignedOwner)
+        try container.encode(createdAt, forKey: .createdAt)
+        try container.encode(reminderKey, forKey: .reminderKey)
         try container.encode(id, forKey: .id)
         try container.encode(kind, forKey: .kind)
         try container.encode(title, forKey: .title)
@@ -92,6 +98,11 @@ struct Item: Codable, Identifiable, Equatable {
         try container.encode(revision, forKey: .revision)
         try container.encode(updatedAt, forKey: .updatedAt)
         try container.encode(updatedBy, forKey: .updatedBy)
+    }
+    var taskSortDate: Double { date ?? createdAt ?? updatedAt }
+    static func taskOrder(_ lhs: Item, _ rhs: Item) -> Bool {
+        if lhs.taskSortDate != rhs.taskSortDate { return lhs.taskSortDate < rhs.taskSortDate }
+        return lhs.id.uuidString < rhs.id.uuidString
     }
     var when: Date? { date.map { Date(timeIntervalSince1970: $0) } }
     static func homeDraft(kind: Kind, viewing day: Date, now: Date = Date(), calendar: Calendar = .current) -> Item {
@@ -156,6 +167,7 @@ struct Item: Codable, Identifiable, Equatable {
 }
 struct Mutation: Codable, Identifiable {
     var mutationId = UUID()
+    var source: String?
     var baseRevision: Int
     var item: Item
     var id: UUID { mutationId }

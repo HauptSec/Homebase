@@ -68,6 +68,16 @@ import Foundation
         precondition(!task.done && task.completedAt == nil && task.completedBy == nil && task.completedByDevice == nil)
         task.complete(now: completion.addingTimeInterval(60), owner: "Alex", deviceID: "alex-phone")
         precondition(task.done && task.completedBy == "Alex" && task.completedAt == completion.timeIntervalSince1970 + 60)
+        var early = Item(kind: .task); early.createdAt = 10
+        var due = Item(kind: .task); due.createdAt = 1; due.date = 20
+        var late = Item(kind: .task); late.createdAt = 30; late.updatedAt = 2
+        precondition([late, due, early].sorted(by: Item.taskOrder).map(\.id) == [early.id, due.id, late.id])
+        early.assignedOwner = "Laura"
+        let assigned = try JSONDecoder().decode(Item.self, from: JSONEncoder().encode(early))
+        precondition(assigned.assignedOwner == "Laura" && assigned.createdAt == 10)
+        for key in ["assignedOwner", "createdAt", "reminderKey"] { legacy.removeValue(forKey: key) }
+        let unassigned = try JSONDecoder().decode(Item.self, from: JSONSerialization.data(withJSONObject: legacy))
+        precondition(unassigned.assignedOwner == nil && unassigned.createdAt == nil)
         print("Task completion passed: offline timestamp, attribution, reopening and cache compatibility")
         print("Home tests passed: event draft dates, dinner expiry, history, DST, year boundary, overdue tasks/bills and event overlap")
     }

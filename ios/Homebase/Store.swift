@@ -87,12 +87,14 @@ enum Keychain {
         if let i = cache.items.firstIndex(where: { $0.id == item.id }) { cache.items[i] = item }
         else { cache.items.append(item) }
     }
-    func save(_ item: Item) {
+    func save(_ item: Item, source: String? = nil) {
+        var item = item
+        if item.createdAt == nil { item.createdAt = cache.items.first(where: { $0.id == item.id })?.createdAt ?? (item.updatedAt > 0 ? item.updatedAt : Date().timeIntervalSince1970) }
         guard !item.isHoliday else { return }
         guard cacheHealthy else { return }
         upsert(item)
         // Queue every edit; never change an in-flight request's idempotency key or body.
-        cache.queue.append(Mutation(baseRevision: item.revision, item: item))
+        cache.queue.append(Mutation(source: source, baseRevision: item.revision, item: item))
         if persist() { refreshEventAlerts(prompt: item.kind == .event && !(item.alertOffsets ?? []).isEmpty); Task { await sync() } }
     }
     func series(for item: Item) -> Item? {

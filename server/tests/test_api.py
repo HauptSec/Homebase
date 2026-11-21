@@ -30,6 +30,55 @@ class APITests(unittest.TestCase):
     def mutation(self, **fields):
         return {'mutationId': str(uuid4()), 'baseRevision': 0, 'item': {'id': str(uuid4()), 'kind': 'grocery', 'title': 'Milk', **fields}}
 
+    def test_task_owner_creation_and_reminders_bridge(self):
+        payload = self.mutation(kind='task', assignedOwner='Laura', createdAt=100)
+        item = self.client.post('/v1/mutations', headers=self.a, json=payload).json()['item']
+        self.assertEqual(item['assignedOwner'], 'Laura')
+        self.assertEqual(item['createdAt'], 100)
+        old = dict(item)
+        old.pop('assignedOwner')
+        old['createdAt'] = 999
+        saved = self.client.post('/v1/mutations', headers=self.a, json={
+            'mutationId': str(uuid4()), 'baseRevision': item['revision'], 'item': old}).json()['item']
+        self.assertEqual(saved['assignedOwner'], 'Laura')
+        self.assertEqual(saved['createdAt'], 100)
+        saved['assignedOwner'] = None
+        cleared = self.client.post('/v1/mutations', headers=self.a, json={
+            'mutationId': str(uuid4()), 'baseRevision': saved['revision'], 'item': saved}).json()['item']
+        self.assertIsNone(cleared['assignedOwner'])
+        self.assertEqual(self.client.post('/v1/mutations', headers=self.a,
+            json=self.mutation(kind='task', assignedOwner='Other')).status_code, 422)
+        self.assertEqual(self.client.post('/v1/reminders/claim', headers=self.a).status_code, 200)
+        self.assertEqual(self.client.post('/v1/reminders/claim', headers=self.b).status_code, 409)
+        self.assertEqual(self.client.post('/v1/calendar/claim', headers=self.b).status_code, 200)
+        imported = self.mutation(kind='task', done=True, reminderKey='apple-key')
+        imported['source'] = 'reminders'
+        self.assertEqual(self.client.post('/v1/mutations', headers=self.b, json=imported).status_code, 403)
+        completed = self.client.post('/v1/mutations', headers=self.a, json=imported).json()['item']
+        self.assertEqual(completed['completedBy'], 'Apple Reminders')
+        self.assertIsNone(completed['completedByDevice'])
+        self.client.post('/v1/reminders/release', headers=self.b)
+        self.assertEqual(self.client.post('/v1/reminders/claim', headers=self.b).status_code, 409)
+        self.client.post('/v1/reminders/release', headers=self.a)
+        self.assertEqual(self.client.post('/v1/reminders/claim', headers=self.b).status_code, 200)
+
+    def test_creation_backfill_uses_first_change(self):
+        payload = self.mutation(kind='task')
+        item = self.client.post('/v1/mutations', headers=self.a, json=payload).json()['item']
+        import json
+        with module.db() as c:
+            old = dict(item)
+            old.pop('createdAt')
+            old['updatedAt'] = 100
+            c.execute('UPDATE changes SET body=? WHERE item_id=?', (json.dumps(old), item['id']))
+            old['updatedAt'] = 200
+            c.execute('UPDATE items SET body=? WHERE id=?', (json.dumps(old), item['id']))
+        module.initialize()
+        page = self.client.get('/v1/sync', headers=self.a).json()
+        self.assertEqual(page['items'][-1]['createdAt'], 100)
+        module.initialize()
+        self.assertEqual(self.client.get('/v1/sync', headers=self.a).json()['cursor'], page['cursor'])
+
     def test_task_completion_attribution_and_history(self):
         with module.db() as c:
             c.execute("UPDATE devices SET owner_name='Laura' WHERE name='Partner'")

@@ -20,6 +20,8 @@
 	<string>$(MARKETING_VERSION)</string>
 	<key>CFBundleVersion</key>
 	<string>$(CURRENT_PROJECT_VERSION)</string>
+	<key>NSRemindersFullAccessUsageDescription</key>
+	<string>Homebase syncs tasks with the shared Homebase - Tasks list you choose.</string>
 	<key>NSCalendarsFullAccessUsageDescription</key>
 	<string>Homebase syncs the shared calendar you choose with your household. Other calendars are not uploaded.</string>
 	<key>UIApplicationSceneManifest</key>

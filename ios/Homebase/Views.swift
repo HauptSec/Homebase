@@ -153,7 +153,7 @@ struct TaskCompletionDetails: View {
     let item: Item
     var body: some View {
         VStack(alignment: .leading, spacing: 4) {
-            if let name = item.completedBy { Text("Completed by \(name)") }
+            if let name = item.completedBy { Text(name == "Apple Reminders" ? "Completed in Apple Reminders" : "Completed by \(name)") }
             if let timestamp = item.completedAt {
                 Text(Date(timeIntervalSince1970: timestamp), format: .dateTime.year().month(.abbreviated).day().hour().minute())
             } else { Text("Completion details unavailable") }
@@ -184,6 +184,7 @@ struct ItemList: View {
             return match
         }.sorted {
             if kind == .task && showHistory { return ($0.completedAt ?? 0) > ($1.completedAt ?? 0) }
+            if kind == .task { return Item.taskOrder($0, $1) }
             if kind == .event && showHistory { return ($0.date ?? 0) > ($1.date ?? 0) }
             if $0.done != $1.done { return !$0.done }
             if kind == .grocery { return $0.title.localizedStandardCompare($1.title) == .orderedAscending }
@@ -239,6 +240,11 @@ struct ItemList: View {
                             if meals.isEmpty { Button("Plan dinner", systemImage: "plus") { var item = Item(kind: .dinner); item.date = day.timeIntervalSince1970; editing = item }.foregroundStyle(.secondary) }
                         }
                     }
+                } else if kind == .task && !showHistory {
+                    ForEach(["Alex", "Laura", "Unassigned"], id: \.self) { owner in
+                        let tasks = values.filter { ($0.assignedOwner ?? "Unassigned") == owner }
+                        if !tasks.isEmpty { Section(owner) { rows(tasks) } }
+                    }
                 } else { rows(values) }
                 if values.isEmpty && kind == .task {
                     ContentUnavailableView(search.isEmpty ? (showHistory ? "No completed tasks" : "No active tasks") : "No matching tasks", systemImage: "checkmark.circle", description: Text(showHistory ? "Tasks you finish will appear here." : "Tap + to add a task."))
@@ -254,7 +260,7 @@ struct ItemList: View {
                 .onReceive(NotificationCenter.default.publisher(for: UIApplication.didBecomeActiveNotification)) { _ in
                     calendarToday = Calendar.current.startOfDay(for: Date())
                 }
-                .refreshable { await store.sync(); if kind == .event { await CalendarBridge.shared.run(store: store) } }
+                .refreshable { await store.sync(); if kind == .event { await CalendarBridge.shared.run(store: store) }; if kind == .task { await RemindersBridge.shared.run(store: store) } }
                 .sheet(item: $editing) { ItemEditSheet(item: $0) }
                 .confirmationDialog("Delete recurring event", isPresented: Binding(get: { deletingEvent != nil }, set: { if !$0 { deletingEvent = nil } })) {
                     if let event = deletingEvent {
@@ -401,7 +407,14 @@ struct ItemEditor: View {
                         TextField("Currency", text: $item.currency).textInputAutocapitalization(.characters)
                     }
                     if item.kind != .meal && item.kind != .grocery {
-                        if item.kind == .task { Toggle("Set a date", isOn: $hasDate) }
+                        if item.kind == .task {
+                            Picker("Assigned owner", selection: $item.assignedOwner) {
+                                Text("Unassigned").tag(String?.none)
+                                Text("Alex").tag(String?.some("Alex"))
+                                Text("Laura").tag(String?.some("Laura"))
+                            }.pickerStyle(.menu)
+                            Toggle("Set a due date", isOn: $hasDate)
+                        }
                         if item.kind == .event {
                             Toggle("All-Day", isOn: $item.allDay).onChange(of: item.allDay) { _, allDay in
                                 if allDay { date = Calendar.current.startOfDay(for: date); end = date }
@@ -617,6 +630,7 @@ struct ConflictsView: View {
 struct SettingsView: View {
     @AppStorage("appearance") private var appearance = "system"
     @EnvironmentObject var store: Store
+    @StateObject var reminders = RemindersBridge.shared
     @StateObject var bridge = CalendarBridge.shared
     @State var repairing = false
     var body: some View {
@@ -633,7 +647,7 @@ struct SettingsView: View {
                 LabeledContent("Status", value: store.status)
                 LabeledContent("Pending edits", value: "\(store.cache.queue.count)")
                 Text(store.endpoint).font(.caption).textSelection(.enabled)
-                Button("Sync now") { Task { await store.sync(); await bridge.run(store: store) } }
+                Button("Sync now") { Task { await store.sync(); await bridge.run(store: store); await reminders.run(store: store) } }
                 Button("Enable notifications") { Task { await store.registerPush() } }
                 Button("Pair this phone again") { repairing = true }
                 if let error = store.error { Text(error).font(.caption).foregroundStyle(.secondary) }
@@ -659,6 +673,32 @@ struct SettingsView: View {
                     Text("Latest release signing expires \(Date(timeIntervalSince1970: release.expiresAt).formatted(date: .abbreviated, time: .omitted)).").font(.caption).foregroundStyle(.secondary)
                 }
                 Text("Updates install over the existing app. Sync your edits first, then confirm installation in Safari.").font(.caption).foregroundStyle(.secondary)
+            }
+            Section("Shared Apple Reminders") {
+                Text("Create an iCloud list named Homebase - Tasks in Apple Reminders and share it with your family. Connect it here on one phone.").font(.footnote)
+                Text(reminders.status).font(.subheadline)
+                if reminders.selected.isEmpty {
+                    Button("Choose Homebase - Tasks") { Task { await reminders.load() } }
+                    ForEach(reminders.calendars, id: \.calendarIdentifier) { list in
+                        Button("\(list.title) · \(list.source.title)") { Task { await reminders.connect(list, store: store) } }
+                    }
+                } else {
+                    Button("Sync tasks now") { Task { await reminders.run(store: store) } }
+                    Button("Disconnect reminders bridge") { Task { await reminders.disconnect(store: store) } }
+                }
+                Text("Owners are shown in reminder notes. Apple’s native person assignments are separate. iOS controls background sync.").font(.caption).foregroundStyle(.secondary)
+            }
+            if !reminders.issues.isEmpty {
+                Section("Reminder changes to review") {
+                    ForEach(reminders.issues) { issue in
+                        VStack(alignment: .leading) {
+                            Text(issue.item.title)
+                            Text(issue.missing ? "Missing from the shared list; iCloud may still be syncing." : "Changed in both Homebase and Reminders.").font(.caption)
+                            Button(issue.missing ? "Restore reminder" : "Use Homebase version") { Task { await reminders.resolve(issue, useHomebase: true, store: store) } }
+                            Button(issue.missing ? "Confirm deletion" : "Use Reminders version") { Task { await reminders.resolve(issue, useHomebase: false, store: store) } }
+                        }
+                    }
+                }
             }
             Section("Shared iCloud calendar") {
                 Text("Choose your shared iCloud calendar on one phone. Keep the bridge on that phone; both phones see its synced events in Homebase.").font(.footnote)

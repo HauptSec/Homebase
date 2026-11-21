@@ -46,11 +46,24 @@ def initialize():
         CREATE TABLE IF NOT EXISTS reminders(item_id TEXT NOT NULL,reminder_at REAL NOT NULL,PRIMARY KEY(item_id,reminder_at));
         CREATE TABLE IF NOT EXISTS app_releases(build INTEGER PRIMARY KEY,metadata TEXT NOT NULL,published REAL NOT NULL);
         CREATE TABLE IF NOT EXISTS install_tickets(hash TEXT PRIMARY KEY,build INTEGER NOT NULL,expires REAL NOT NULL,device_id TEXT);
+        CREATE TABLE IF NOT EXISTS reminders_bridge(singleton INTEGER PRIMARY KEY CHECK(singleton=1),device_id TEXT NOT NULL);
         CREATE TABLE IF NOT EXISTS calendar_bridge(singleton INTEGER PRIMARY KEY CHECK(singleton=1),device_id TEXT NOT NULL);
         CREATE TABLE IF NOT EXISTS rate_limits(bucket TEXT PRIMARY KEY,starts REAL NOT NULL,count INTEGER NOT NULL);
         ''')
         if 'owner_name' not in {row['name'] for row in c.execute('PRAGMA table_info(devices)')}:
             c.execute('ALTER TABLE devices ADD COLUMN owner_name TEXT')
+        # Backfill the first recorded creation time, rather than the most recent edit.
+        for row in c.execute('SELECT * FROM items').fetchall():
+            item = json.loads(row['body'])
+            if item.get('createdAt') is not None:
+                continue
+            first = c.execute('SELECT body FROM changes WHERE item_id=? ORDER BY seq LIMIT 1', (row['id'],)).fetchone()
+            original = json.loads(first['body']) if first else item
+            item['createdAt'] = original.get('updatedAt') or time.time()
+            item['revision'] = row['revision'] + 1
+            body = json.dumps(item)
+            c.execute('UPDATE items SET revision=?,body=? WHERE id=?', (item['revision'], body, row['id']))
+            c.execute('INSERT INTO changes(item_id,body) VALUES(?,?)', (row['id'], body))
 
 
 def device_owner(actor):
@@ -102,6 +115,9 @@ class Item(BaseModel):
     model_config = ConfigDict(extra='forbid', allow_inf_nan=False)
     id: UUID
     kind: Literal['event', 'dinner', 'bill', 'task', 'grocery', 'meal']
+    assignedOwner: Literal['Alex', 'Laura'] | None = None
+    createdAt: float | None = Field(default=None, ge=0)
+    reminderKey: str | None = Field(default=None, max_length=1000)
     title: str = Field(min_length=1, max_length=300)
     notes: str = Field(default='', max_length=10000)
     date: float | None = None
@@ -175,6 +191,7 @@ class Item(BaseModel):
 
 
 class Mutation(BaseModel):
+    source: Literal['reminders'] | None = None
     mutationId: UUID
     baseRevision: int = Field(ge=0)
     item: Item
@@ -314,7 +331,7 @@ def mutate(payload: Mutation, actor=Depends(device)):
         # Preserve newly added fields when older clients save unrelated edits.
         if current:
             previous_item = json.loads(current['body'])
-            for field in ('budgetType', 'prepSteps', 'cookingSteps', 'recurrenceUntil', 'recurrenceTimeZone', 'seriesID', 'occurrenceDate', 'seriesVersion', 'customFrequency', 'customInterval', 'repeatWeekdays', 'location', 'latitude', 'longitude', 'alertOffsets'):
+            for field in ('assignedOwner', 'reminderKey', 'budgetType', 'prepSteps', 'cookingSteps', 'recurrenceUntil', 'recurrenceTimeZone', 'seriesID', 'occurrenceDate', 'seriesVersion', 'customFrequency', 'customInterval', 'repeatWeekdays', 'location', 'latitude', 'longitude', 'alertOffsets'):
                 if field not in payload.item.model_fields_set and field in previous_item:
                     item[field] = previous_item[field]
         if item.get('seriesID'):
@@ -323,14 +340,20 @@ def mutate(payload: Mutation, actor=Depends(device)):
             if not parent or parent['deleted'] or parent['kind'] != 'event' or parent['recurrence'] == 'none' or parent.get('seriesVersion') != item.get('seriesVersion'):
                 raise HTTPException(409, {'message': 'The recurring series changed. Sync and try again.', 'current': json.loads(current['body']) if current else {**item, 'deleted': True}})
         previous_item = json.loads(current['body']) if current else {}
+        item['createdAt'] = (previous_item.get('createdAt') or previous_item.get('updatedAt') or min(item.get('createdAt') or time.time(), time.time()))
+        from_reminders = payload.source == 'reminders'
+        if from_reminders:
+            bridge = c.execute('SELECT device_id FROM reminders_bridge WHERE singleton=1').fetchone()
+            if not bridge or bridge['device_id'] != actor['id'] or item['kind'] != 'task':
+                raise HTTPException(403, 'Only the reminders bridge may import task changes')
         if item['kind'] == 'task' and item['done']:
             if not previous_item.get('done'):
-                owner = device_owner(actor)
+                owner = "Apple Reminders" if from_reminders else device_owner(actor)
                 if owner is None:
                     raise HTTPException(422, 'Assign this device to Alex or Laura before completing tasks')
                 item['completedAt'] = min(item.get('completedAt') or time.time(), time.time())
                 item['completedBy'] = owner
-                item['completedByDevice'] = actor['id']
+                item['completedByDevice'] = None if from_reminders else actor['id']
             else:
                 # Completion attribution is immutable during unrelated edits, including old clients.
                 for field in ('completedAt', 'completedBy', 'completedByDevice'):
@@ -401,6 +424,24 @@ def claim_calendar(actor=Depends(device)):
 def release_calendar(actor=Depends(device)):
     with db() as c:
         c.execute('DELETE FROM calendar_bridge WHERE device_id=?', (actor['id'],))
+    return {'ok': True}
+
+
+@app.post('/v1/reminders/claim')
+def claim_reminders(actor=Depends(device)):
+    with db() as c:
+        c.execute('BEGIN IMMEDIATE')
+        c.execute('DELETE FROM reminders_bridge WHERE device_id IN (SELECT id FROM devices WHERE revoked=1)')
+        owner = c.execute('SELECT device_id FROM reminders_bridge WHERE singleton=1').fetchone()
+        if owner and owner['device_id'] != actor['id']:
+            raise HTTPException(409, 'Another phone is the reminders bridge. Release it in Settings first.')
+        c.execute('INSERT OR REPLACE INTO reminders_bridge VALUES(1,?)', (actor['id'],))
+    return {'ok': True}
+
+@app.post('/v1/reminders/release')
+def release_reminders(actor=Depends(device)):
+    with db() as c:
+        c.execute('DELETE FROM reminders_bridge WHERE device_id=?', (actor['id'],))
     return {'ok': True}
 
 
