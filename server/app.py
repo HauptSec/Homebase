@@ -46,6 +46,7 @@ def initialize():
         CREATE TABLE IF NOT EXISTS reminders(item_id TEXT NOT NULL,reminder_at REAL NOT NULL,PRIMARY KEY(item_id,reminder_at));
         CREATE TABLE IF NOT EXISTS app_releases(build INTEGER PRIMARY KEY,metadata TEXT NOT NULL,published REAL NOT NULL);
         CREATE TABLE IF NOT EXISTS install_tickets(hash TEXT PRIMARY KEY,build INTEGER NOT NULL,expires REAL NOT NULL,device_id TEXT);
+        CREATE TABLE IF NOT EXISTS dinner_reminders_bridge(singleton INTEGER PRIMARY KEY CHECK(singleton=1),device_id TEXT NOT NULL);
         CREATE TABLE IF NOT EXISTS reminders_bridge(singleton INTEGER PRIMARY KEY CHECK(singleton=1),device_id TEXT NOT NULL);
         CREATE TABLE IF NOT EXISTS calendar_bridge(singleton INTEGER PRIMARY KEY CHECK(singleton=1),device_id TEXT NOT NULL);
         CREATE TABLE IF NOT EXISTS rate_limits(bucket TEXT PRIMARY KEY,starts REAL NOT NULL,count INTEGER NOT NULL);
@@ -191,7 +192,7 @@ class Item(BaseModel):
 
 
 class Mutation(BaseModel):
-    source: Literal['reminders'] | None = None
+    source: Literal['reminders', 'dinner-reminders'] | None = None
     mutationId: UUID
     baseRevision: int = Field(ge=0)
     item: Item
@@ -341,11 +342,12 @@ def mutate(payload: Mutation, actor=Depends(device)):
                 raise HTTPException(409, {'message': 'The recurring series changed. Sync and try again.', 'current': json.loads(current['body']) if current else {**item, 'deleted': True}})
         previous_item = json.loads(current['body']) if current else {}
         item['createdAt'] = (previous_item.get('createdAt') or previous_item.get('updatedAt') or min(item.get('createdAt') or time.time(), time.time()))
-        from_reminders = payload.source == 'reminders'
+        from_reminders = payload.source in ('reminders', 'dinner-reminders')
         if from_reminders:
-            bridge = c.execute('SELECT device_id FROM reminders_bridge WHERE singleton=1').fetchone()
-            if not bridge or bridge['device_id'] != actor['id'] or item['kind'] != 'task':
-                raise HTTPException(403, 'Only the reminders bridge may import task changes')
+            table, kind = ('dinner_reminders_bridge', 'dinner') if payload.source == 'dinner-reminders' else ('reminders_bridge', 'task')
+            bridge = c.execute(f'SELECT device_id FROM {table} WHERE singleton=1').fetchone()
+            if not bridge or bridge['device_id'] != actor['id'] or item['kind'] != kind:
+                raise HTTPException(403, 'Only the matching reminders bridge may import these changes')
         if item['kind'] == 'task' and item['done']:
             if not previous_item.get('done'):
                 owner = "Apple Reminders" if from_reminders else device_owner(actor)
@@ -442,6 +444,24 @@ def claim_reminders(actor=Depends(device)):
 def release_reminders(actor=Depends(device)):
     with db() as c:
         c.execute('DELETE FROM reminders_bridge WHERE device_id=?', (actor['id'],))
+    return {'ok': True}
+
+
+@app.post('/v1/dinner-reminders/claim')
+def claim_dinner_reminders(actor=Depends(device)):
+    with db() as c:
+        c.execute('BEGIN IMMEDIATE')
+        c.execute('DELETE FROM dinner_reminders_bridge WHERE device_id IN (SELECT id FROM devices WHERE revoked=1)')
+        owner = c.execute('SELECT device_id FROM dinner_reminders_bridge WHERE singleton=1').fetchone()
+        if owner and owner['device_id'] != actor['id']:
+            raise HTTPException(409, 'Another phone is the dinner reminders bridge. Release it in Settings first.')
+        c.execute('INSERT OR REPLACE INTO dinner_reminders_bridge VALUES(1,?)', (actor['id'],))
+    return {'ok': True}
+
+@app.post('/v1/dinner-reminders/release')
+def release_dinner_reminders(actor=Depends(device)):
+    with db() as c:
+        c.execute('DELETE FROM dinner_reminders_bridge WHERE device_id=?', (actor['id'],))
     return {'ok': True}
 
 

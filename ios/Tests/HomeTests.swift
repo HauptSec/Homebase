@@ -4,6 +4,25 @@ import Foundation
     static func main() throws {
         var calendar = Calendar(identifier: .gregorian)
         calendar.timeZone = TimeZone(identifier: "America/Los_Angeles")!
+        var movedTask = Item(kind: .task)
+        movedTask.assignedOwner = "Alex"; movedTask.date = 12345; movedTask.notes = "Keep me"
+        let taskID = movedTask.id
+        precondition(movedTask.move(to: .taskOwner("Laura")))
+        precondition(movedTask.id == taskID && movedTask.assignedOwner == "Laura" && movedTask.date == 12345 && movedTask.notes == "Keep me")
+        precondition(!movedTask.move(to: .taskOwner("Laura")))
+        precondition(movedTask.move(to: .taskOwner(nil)) && movedTask.assignedOwner == nil)
+        precondition(!movedTask.move(to: .taskOwner("Other")))
+        precondition(!movedTask.move(to: .groceryStore("Costco")))
+        movedTask.done = true
+        precondition(!movedTask.move(to: .taskOwner("Alex")))
+        var movedGrocery = Item(kind: .grocery)
+        movedGrocery.quantity = "2"; movedGrocery.store = "Costco"
+        precondition(movedGrocery.move(to: .groceryStore(" Target ")))
+        precondition(movedGrocery.store == "Target" && movedGrocery.quantity == "2")
+        precondition(movedGrocery.move(to: .groceryStore("")) && movedGrocery.store.isEmpty)
+        precondition(!movedGrocery.move(to: .groceryStore(String(repeating: "a", count: 101))))
+        movedGrocery.deleted = true
+        precondition(!movedGrocery.move(to: .groceryStore("Costco")))
         // Cover ordinary midnight, both DST transitions, and the year boundary.
         for components in [DateComponents(year: 2026, month: 11, day: 7),
                            DateComponents(year: 2026, month: 3, day: 8),
@@ -29,6 +48,18 @@ import Foundation
             grocery.complete(now: checkout)
             precondition(!grocery.done && grocery.completedAt == nil)
             precondition(grocery.visibleOnGroceryList(on: tomorrow, calendar: calendar))
+            var movedDinner = Item(kind: .dinner)
+            movedDinner.date = calendar.date(bySettingHour: 18, minute: 30, second: 0, of: day)!.timeIntervalSince1970
+            movedDinner.reminderAt = movedDinner.date! - 3600
+            movedDinner.ingredients = ["Pasta"]
+            precondition(movedDinner.move(to: .dinnerDay(tomorrow), calendar: calendar))
+            precondition(calendar.isDate(movedDinner.when!, inSameDayAs: tomorrow))
+            precondition(calendar.component(.hour, from: movedDinner.when!) == 18)
+            precondition(calendar.component(.minute, from: movedDinner.when!) == 30)
+            precondition(movedDinner.date! - movedDinner.reminderAt! == 3600 && movedDinner.ingredients == ["Pasta"])
+            precondition(!movedDinner.move(to: .dinnerDay(tomorrow), calendar: calendar))
+            let roundTrip = try JSONDecoder().decode(Item.self, from: JSONEncoder().encode(movedDinner))
+            precondition(roundTrip == movedDinner)
             var dinner = Item(kind: .dinner)
             dinner.date = day.timeIntervalSince1970
             precondition(dinner.appearsOnHome(on: tomorrow.addingTimeInterval(-1), isToday: true, calendar: calendar))

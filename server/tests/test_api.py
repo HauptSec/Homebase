@@ -62,6 +62,42 @@ class APITests(unittest.TestCase):
         self.client.post('/v1/reminders/release', headers=self.a)
         self.assertEqual(self.client.post('/v1/reminders/claim', headers=self.b).status_code, 200)
 
+    def test_dinner_reminders_are_independent_and_require_dates(self):
+        self.assertEqual(self.client.post('/v1/reminders/claim', headers=self.a).status_code, 200)
+        self.assertEqual(self.client.post('/v1/dinner-reminders/claim', headers=self.b).status_code, 200)
+        self.assertEqual(self.client.post('/v1/dinner-reminders/claim', headers=self.a).status_code, 409)
+        dinner = self.mutation(kind='dinner', title='Tacos', date=1795305600,
+                               ingredients=['Tortillas'], cookingSteps=['Warm tortillas'])
+        dinner['source'] = 'dinner-reminders'
+        self.assertEqual(self.client.post('/v1/mutations', headers=self.a, json=dinner).status_code, 403)
+        response = self.client.post('/v1/mutations', headers=self.b, json=dinner)
+        self.assertEqual(response.status_code, 200, response.text)
+        item = response.json()['item']
+        item.update(date=1795392000, done=True)
+        response = self.client.post('/v1/mutations', headers=self.b, json={
+            'mutationId': str(uuid4()), 'baseRevision': item['revision'],
+            'source': 'dinner-reminders', 'item': item})
+        self.assertEqual(response.status_code, 200, response.text)
+        self.assertEqual(response.json()['item']['ingredients'], ['Tortillas'])
+        self.assertEqual(response.json()['item']['cookingSteps'], ['Warm tortillas'])
+        self.assertTrue(response.json()['item']['done'])
+        invalid = self.mutation(kind='dinner')
+        invalid['source'] = 'dinner-reminders'
+        self.assertEqual(self.client.post('/v1/mutations', headers=self.b, json=invalid).status_code, 422)
+        wrong_kind = self.mutation(kind='task')
+        wrong_kind['source'] = 'dinner-reminders'
+        self.assertEqual(self.client.post('/v1/mutations', headers=self.b, json=wrong_kind).status_code, 403)
+        dinner['mutationId'] = str(uuid4())
+        dinner['source'] = 'reminders'
+        dinner['item']['id'] = str(uuid4())
+        self.assertEqual(self.client.post('/v1/mutations', headers=self.a, json=dinner).status_code, 403)
+        self.client.post('/v1/dinner-reminders/release', headers=self.a)
+        self.assertEqual(self.client.post('/v1/dinner-reminders/claim', headers=self.a).status_code, 409)
+        self.client.post('/v1/dinner-reminders/release', headers=self.b)
+        self.assertEqual(self.client.post('/v1/dinner-reminders/claim', headers=self.a).status_code, 200)
+        # Releasing dinners never releases the Tasks bridge.
+        self.assertEqual(self.client.post('/v1/reminders/claim', headers=self.b).status_code, 409)
+
     def test_creation_backfill_uses_first_change(self):
         payload = self.mutation(kind='task')
         item = self.client.post('/v1/mutations', headers=self.a, json=payload).json()['item']

@@ -97,6 +97,12 @@ enum Keychain {
         cache.queue.append(Mutation(source: source, baseRevision: item.revision, item: item))
         if persist() { refreshEventAlerts(prompt: item.kind == .event && !(item.alertOffsets ?? []).isEmpty); Task { await sync() } }
     }
+    func move(_ id: UUID, to destination: ItemDestination) {
+        // Resolve the latest local object at drop time, including any pending offline edits.
+        guard var item = cache.items.first(where: { $0.id == id }), item.move(to: destination) else { return }
+        save(item)
+        Task { await sync(); await RemindersBridge.runAll(store: self) }
+    }
     func series(for item: Item) -> Item? {
         if item.isRecurringSeries { return item }
         return cache.items.first { $0.id == item.seriesID && !$0.deleted && $0.isRecurringSeries }

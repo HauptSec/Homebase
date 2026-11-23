@@ -174,3 +174,15 @@ In Apple Reminders, create an iCloud list named **Homebase - Tasks** and share i
 The bridge syncs titles, notes, due dates, absolute reminder alerts, completion, and deletions. Owners are stored as a trailing `Homebase owner: Alex`, `Laura`, or `Unassigned` line in reminder notes; this is separate from Apple's native assignments. Completion imported from Apple is labeled “Completed in Apple Reminders” because EventKit does not identify the person who completed it. Native recurrence, subtasks, and native assignments are not mapped into Homebase. Existing Apple recurrence rules are preserved when editing supported fields.
 
 Sync runs on app activation, during foreground refresh, on EventKit changes, and when iOS permits background refresh. Settings includes a manual sync button. Simultaneous edits and missing reminders require review in Settings; temporary iCloud omissions never automatically delete Homebase tasks. Disconnecting leaves both copies intact. Dinners are excluded from this list.
+
+## Shared dinner reminders
+
+Create a separate iCloud list named **Homebase - Dinners** in Apple Reminders, share it with the family, then select it under Homebase Settings → Homebase - Dinners on one paired phone. Deploy the server update before installing the app update. Task and dinner connections are independent and may run on different phones.
+
+Each planned dinner becomes a reminder due on its meal day, without an artificial due time. Titles, notes, meal dates, alerts, completion, and deletions sync both ways across all weeks; moving to another week does not remove reminders. Ingredients, prep steps, and cooking instructions remain in Homebase and survive edits imported from Reminders. Saved favorite meals are excluded. New Apple reminders must have a due date before import. Removing the date from an existing linked dinner pauses that dinner for review instead of removing it from the plan. Missing reminders and conflicting edits use the same review flow as Tasks.
+
+## Moving items between groups
+
+Drag the handle on an active task or grocery item, or a planned dinner, onto a destination section header, row, or empty group. Tasks update their assigned owner; groceries update their store (General clears the store); dinners update their meal date while preserving the meal time and shifting any reminder by the same interval. Moves use the normal offline save queue and sync to the household and connected Reminders list. Existing date/alphabetical ordering within groups remains in effect. Empty owner groups, known grocery stores, General, and all seven dinner days remain available as destinations.
+
+Checked-off groceries appear in **Completed Items** at the top of the shopping list. Only items completed on the current local calendar day appear there; the section resets at midnight or when the app next becomes active. Historical records remain stored, and unchecking a visible item returns it to its store.

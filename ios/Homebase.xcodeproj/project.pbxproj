@@ -20,6 +20,7 @@
 		0000000000000000000000D1 /* CalendarEventFields.swift in Sources */ = {isa = PBXBuildFile; fileRef = 00000000000000000000006D /* CalendarEventFields.swift */; };
 		0000000000000000000000D2 /* NativeSeriesSmoke.swift in Sources */ = {isa = PBXBuildFile; fileRef = 00000000000000000000006E /* NativeSeriesSmoke.swift */; };
 		0000000000000000000000D3 /* RemindersBridge.swift in Sources */ = {isa = PBXBuildFile; fileRef = 00000000000000000000006F /* RemindersBridge.swift */; };
+		0000000000000000000000D4 /* ReminderFields.swift in Sources */ = {isa = PBXBuildFile; fileRef = 000000000000000000000070 /* ReminderFields.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -37,6 +38,7 @@
 		00000000000000000000006D /* CalendarEventFields.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CalendarEventFields.swift; sourceTree = "<group>"; };
 		00000000000000000000006E /* NativeSeriesSmoke.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NativeSeriesSmoke.swift; sourceTree = "<group>"; };
 		00000000000000000000006F /* RemindersBridge.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RemindersBridge.swift; sourceTree = "<group>"; };
+		000000000000000000000070 /* ReminderFields.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ReminderFields.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -73,6 +75,7 @@
 				00000000000000000000006D /* CalendarEventFields.swift */,
 				00000000000000000000006E /* NativeSeriesSmoke.swift */,
 				00000000000000000000006F /* RemindersBridge.swift */,
+				000000000000000000000070 /* ReminderFields.swift */,
 				00000000000000000000012C /* Assets.xcassets */,
 			);
 			path = Homebase;
@@ -160,6 +163,7 @@
 				0000000000000000000000D1 /* CalendarEventFields.swift in Sources */,
 				0000000000000000000000D2 /* NativeSeriesSmoke.swift in Sources */,
 				0000000000000000000000D3 /* RemindersBridge.swift in Sources */,
+				0000000000000000000000D4 /* ReminderFields.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

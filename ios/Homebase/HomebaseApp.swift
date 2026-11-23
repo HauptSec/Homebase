@@ -8,7 +8,7 @@ import EventKit
         UNUserNotificationCenter.current().delegate = self
         BGTaskScheduler.shared.register(forTaskWithIdentifier: "xyz.hauptsec.homebase.refresh", using: nil) { task in
             Task { @MainActor in
-                let work = Task { await Store.shared.sync(); await CalendarBridge.shared.run(store: Store.shared); await RemindersBridge.shared.run(store: Store.shared); Self.schedule(); task.setTaskCompleted(success: !Task.isCancelled) }
+                let work = Task { await Store.shared.sync(); await CalendarBridge.shared.run(store: Store.shared); await RemindersBridge.runAll(store: Store.shared); Self.schedule(); task.setTaskCompleted(success: !Task.isCancelled) }
                 task.expirationHandler = { work.cancel() }
             }
         }
@@ -45,21 +45,21 @@ import EventKit
                     #if DEBUG
                     if ProcessInfo.processInfo.arguments.contains("--native-series-smoke") { await NativeSeriesSmoke.run(store: store); return }
                     #endif
-                    if store.paired { await store.sync(); store.startLive(); await store.registerPush(); await CalendarBridge.shared.run(store: store); await RemindersBridge.shared.run(store: store) } }
+                    if store.paired { await store.sync(); store.startLive(); await store.registerPush(); await CalendarBridge.shared.run(store: store); await RemindersBridge.runAll(store: store) } }
                 .task(id: phase) {
                     guard phase == .active else { return }
                     while !Task.isCancelled {
                         try? await Task.sleep(for: .seconds(30))
                         guard !Task.isCancelled else { return }
                         await store.sync()
-                        await CalendarBridge.shared.run(store: store); await RemindersBridge.shared.run(store: store)
+                        await CalendarBridge.shared.run(store: store); await RemindersBridge.runAll(store: store)
                     }
                 }
                 .onReceive(NotificationCenter.default.publisher(for: .EKEventStoreChanged)) { _ in
-                    Task { await CalendarBridge.shared.run(store: store); await RemindersBridge.shared.run(store: store) }
+                    Task { await CalendarBridge.shared.run(store: store); await RemindersBridge.runAll(store: store) }
                 }
                 .onChange(of: phase) { _, value in
-                    if value == .active { store.startLive(); Task { await store.sync(); await CalendarBridge.shared.run(store: store); await RemindersBridge.shared.run(store: store) } }
+                    if value == .active { store.startLive(); Task { await store.sync(); await CalendarBridge.shared.run(store: store); await RemindersBridge.runAll(store: store) } }
                     else if value == .background { store.stopLive(); AppDelegate.schedule() }
                 }
         }

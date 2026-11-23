@@ -1,4 +1,5 @@
 import SwiftUI
+import UniformTypeIdentifiers
 
 struct RootView: View {
     @EnvironmentObject var store: Store
@@ -136,7 +137,7 @@ struct ItemRow: View {
                 if item.seriesID != nil { Label("Repeating event", systemImage: "repeat").font(.caption).foregroundStyle(.secondary) }
                 if item.kind == .bill { Text("\(item.isIncome ? "Income" : "Expense") · \(item.recurrenceLabel)").font(.caption).foregroundStyle(.secondary) }
                 if item.allDay { Text("All day").font(.caption).foregroundStyle(.secondary) }
-                if !item.quantity.isEmpty { Text(item.quantity).font(.caption).foregroundStyle(.secondary) }
+                if !item.quantity.isEmpty { Text(item.kind == .grocery ? "x\(item.quantity)" : item.quantity).font(.caption).foregroundStyle(.secondary) }
                 if !item.notes.isEmpty { Text(item.notes).font(.caption).foregroundStyle(.secondary).lineLimit(1) }
             }
             Spacer()
@@ -169,6 +170,11 @@ struct ItemList: View {
     @State private var showHistory = false
     @State private var calendarToday = Calendar.current.startOfDay(for: Date())
     @State var week = Calendar.current.dateInterval(of: .weekOfYear, for: Date())!.start
+    var groceryStores: [String] {
+        let names = store.cache.items.filter { $0.kind == .grocery && !$0.deleted }
+            .map { $0.store.trimmingCharacters(in: .whitespacesAndNewlines) }
+        return Set(names + [""]).sorted { $0.localizedStandardCompare($1) == .orderedAscending }
+    }
     var values: [Item] {
         store.items(kind).filter { item in
             let match = search.isEmpty || item.title.localizedCaseInsensitiveContains(search) || item.notes.localizedCaseInsensitiveContains(search)
@@ -221,36 +227,50 @@ struct ItemList: View {
                 }
                 if kind == .grocery {
                     let groceries = values
-                    let groups = Dictionary(grouping: groceries.filter { !$0.done }) {
-                        $0.store.trimmingCharacters(in: .whitespaces)
-                    }
-                    ForEach(groups.keys.sorted { $0.localizedStandardCompare($1) == .orderedAscending }, id: \.self) { name in
-                        Section(name.isEmpty ? "General" : name) { rows(groups[name] ?? []) }
-                    }
                     let completed = groceries.filter(\.done).sorted { ($0.completedAt ?? 0) > ($1.completedAt ?? 0) }
-                    if !completed.isEmpty {
-                        Section("Completed today") { rows(completed) }
+                    Section("Completed Items") {
+                        rows(completed)
+                        if completed.isEmpty { Text("No items completed today.").foregroundStyle(.secondary) }
+                    }
+                    let groups = Dictionary(grouping: groceries.filter { !$0.done }) {
+                        $0.store.trimmingCharacters(in: .whitespacesAndNewlines)
+                    }
+                    ForEach(groceryStores, id: \.self) { name in
+                        let destination = ItemDestination.groceryStore(name)
+                        Section {
+                            rows(groups[name] ?? [], destination: destination)
+                            if (groups[name] ?? []).isEmpty { dropPlaceholder("Drop an item here", destination: destination) }
+                        } header: { dropHeader(name.isEmpty ? "General" : name, destination: destination) }
                     }
                 } else if kind == .dinner {
                     ForEach(0..<7, id: \.self) { offset in
                         let day = Calendar.current.date(byAdding: .day, value: offset, to: week)!
-                        Section(day.formatted(.dateTime.weekday(.wide).month(.abbreviated).day())) {
+                        let destination = ItemDestination.dinnerDay(day)
+                        Section {
                             let meals = values.filter { $0.when.map { Calendar.current.isDate($0, inSameDayAs: day) } ?? false }
-                            rows(meals)
-                            if meals.isEmpty { Button("Plan dinner", systemImage: "plus") { var item = Item(kind: .dinner); item.date = day.timeIntervalSince1970; editing = item }.foregroundStyle(.secondary) }
-                        }
+                            rows(meals, destination: destination)
+                            if meals.isEmpty {
+                                Button("Plan dinner", systemImage: "plus") { var item = Item(kind: .dinner); item.date = day.timeIntervalSince1970; editing = item }
+                                    .foregroundStyle(.secondary)
+                                    .modifier(ItemDropTarget(destination: destination))
+                            }
+                        } header: { dropHeader(day.formatted(.dateTime.weekday(.wide).month(.abbreviated).day()), destination: destination) }
                     }
                 } else if kind == .task && !showHistory {
                     ForEach(["Alex", "Laura", "Unassigned"], id: \.self) { owner in
                         let tasks = values.filter { ($0.assignedOwner ?? "Unassigned") == owner }
-                        if !tasks.isEmpty { Section(owner) { rows(tasks) } }
+                        let destination = ItemDestination.taskOwner(owner == "Unassigned" ? nil : owner)
+                        Section {
+                            rows(tasks, destination: destination)
+                            if tasks.isEmpty { dropPlaceholder("Drop a task here", destination: destination) }
+                        } header: { dropHeader(owner, destination: destination) }
                     }
                 } else { rows(values) }
                 if values.isEmpty && kind == .task {
                     ContentUnavailableView(search.isEmpty ? (showHistory ? "No completed tasks" : "No active tasks") : "No matching tasks", systemImage: "checkmark.circle", description: Text(showHistory ? "Tasks you finish will appear here." : "Tap + to add a task."))
                 } else if values.isEmpty && kind == .event {
                     ContentUnavailableView(search.isEmpty ? (showHistory ? "No past events" : "No upcoming events") : "No matching events", systemImage: "calendar", description: Text(search.isEmpty ? (showHistory ? "Past events will appear here, newest first." : "Tap + to add an event.") : "Try a different search or calendar range."))
-                } else if values.isEmpty && kind != .dinner { ContentUnavailableView("Room for \(kind.title.lowercased())", systemImage: kind.symbol, description: Text("Tap + to add your first item.")) }
+                } else if values.isEmpty && kind != .dinner && kind != .grocery { ContentUnavailableView("Room for \(kind.title.lowercased())", systemImage: kind.symbol, description: Text("Tap + to add your first item.")) }
             }.scrollContentBackground(.hidden).background(Color("Canvas")).navigationTitle(kind == .task && showHistory ? "Completed tasks" : kind.title).searchable(text: $search)
                 .toolbar { ToolbarItem(placement: .topBarTrailing) { Button("Add", systemImage: "plus") { editing = Item(kind: kind) } } }
                 .onAppear { calendarToday = Calendar.current.startOfDay(for: Date()) }
@@ -260,7 +280,7 @@ struct ItemList: View {
                 .onReceive(NotificationCenter.default.publisher(for: UIApplication.didBecomeActiveNotification)) { _ in
                     calendarToday = Calendar.current.startOfDay(for: Date())
                 }
-                .refreshable { await store.sync(); if kind == .event { await CalendarBridge.shared.run(store: store) }; if kind == .task { await RemindersBridge.shared.run(store: store) } }
+                .refreshable { await store.sync(); if kind == .event { await CalendarBridge.shared.run(store: store) }; if kind == .task { await RemindersBridge.shared.run(store: store) }; if kind == .dinner { await RemindersBridge.dinners.run(store: store) } }
                 .sheet(item: $editing) { ItemEditSheet(item: $0) }
                 .confirmationDialog("Delete recurring event", isPresented: Binding(get: { deletingEvent != nil }, set: { if !$0 { deletingEvent = nil } })) {
                     if let event = deletingEvent {
@@ -271,7 +291,16 @@ struct ItemList: View {
                 }
         }
     }
-    @ViewBuilder func rows(_ items: [Item]) -> some View {
+    func dropHeader(_ title: String, destination: ItemDestination) -> some View {
+        Text(title).frame(maxWidth: .infinity, alignment: .leading).padding(.vertical, 6)
+            .modifier(ItemDropTarget(destination: destination))
+    }
+    func dropPlaceholder(_ title: String, destination: ItemDestination) -> some View {
+        Text(title).font(.subheadline).foregroundStyle(.secondary)
+            .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
+            .modifier(ItemDropTarget(destination: destination))
+    }
+    @ViewBuilder func rows(_ items: [Item], destination: ItemDestination? = nil) -> some View {
         ForEach(items) { item in
             if item.isHoliday { ItemRow(item: item) } else {
             HStack {
@@ -286,7 +315,22 @@ struct ItemList: View {
                 Button { editing = item } label: {
                     ItemRow(item: item, showsIcon: kind != .grocery).contentShape(Rectangle())
                 }.buttonStyle(.plain)
+                if item.canDragBetweenGroups {
+                    Spacer(minLength: 0)
+                    Image(systemName: "line.3.horizontal")
+                        .foregroundStyle(.secondary).frame(width: 44, height: 44).contentShape(Rectangle())
+                        .accessibilityLabel("Drag \(item.title) to another group")
+                        .onDrag {
+                            let provider = NSItemProvider()
+                            provider.registerDataRepresentation(forTypeIdentifier: UTType.homebaseItem.identifier, visibility: .ownProcess) { completion in
+                                completion(Data(item.id.uuidString.utf8), nil)
+                                return nil
+                            }
+                            return provider
+                        } preview: { Text(item.title).padding().background(.regularMaterial, in: RoundedRectangle(cornerRadius: 12)) }
+                }
             }
+                .modifier(ItemDropTarget(destination: destination))
                 .swipeActions(edge: .trailing) { Button("Delete", role: .destructive) {
                     if item.seriesID != nil { deletingEvent = item } else { store.remove(item) }
                 } }
@@ -367,6 +411,7 @@ struct MealLinesSection: View {
     }
 }
 struct ItemEditor: View {
+    @AppStorage("lastShoppingStore") private var lastShoppingStore = ""
     @EnvironmentObject var store: Store
     @Environment(\.dismiss) var dismiss
     @State var item: Item
@@ -513,6 +558,11 @@ struct ItemEditor: View {
                     Button("Delete", role: .destructive) { store.remove(item); dismiss() }
                 }
                 .onAppear {
+                    // Only prefill a fresh draft, including when existing items are still offline.
+                    if originalItem == nil && item.kind == .grocery && item.store.isEmpty
+                        && item.revision == 0 && !store.cache.items.contains(where: { $0.id == item.id }) {
+                        item.store = lastShoppingStore
+                    }
                     originalItem = item
                     repeatsUntil = item.recurrenceUntil != nil
                     repeatEnd = Date(timeIntervalSince1970: item.recurrenceUntil ?? (item.date ?? Date().timeIntervalSince1970))
@@ -594,6 +644,10 @@ struct ItemEditor: View {
         if item.kind == .dinner || item.kind == .meal {
             item.prepSteps = prepLines; item.cookingSteps = cookingLines
         }
+        if item.kind == .grocery {
+            item.store = item.store.trimmingCharacters(in: .whitespacesAndNewlines)
+            lastShoppingStore = item.store
+        }
         store.save(item)
         Task { await store.sync(); await CalendarBridge.shared.run(store: store) }
     }
@@ -647,7 +701,7 @@ struct SettingsView: View {
                 LabeledContent("Status", value: store.status)
                 LabeledContent("Pending edits", value: "\(store.cache.queue.count)")
                 Text(store.endpoint).font(.caption).textSelection(.enabled)
-                Button("Sync now") { Task { await store.sync(); await bridge.run(store: store); await reminders.run(store: store) } }
+                Button("Sync now") { Task { await store.sync(); await bridge.run(store: store); await RemindersBridge.runAll(store: store) } }
                 Button("Enable notifications") { Task { await store.registerPush() } }
                 Button("Pair this phone again") { repairing = true }
                 if let error = store.error { Text(error).font(.caption).foregroundStyle(.secondary) }
@@ -674,32 +728,8 @@ struct SettingsView: View {
                 }
                 Text("Updates install over the existing app. Sync your edits first, then confirm installation in Safari.").font(.caption).foregroundStyle(.secondary)
             }
-            Section("Shared Apple Reminders") {
-                Text("Create an iCloud list named Homebase - Tasks in Apple Reminders and share it with your family. Connect it here on one phone.").font(.footnote)
-                Text(reminders.status).font(.subheadline)
-                if reminders.selected.isEmpty {
-                    Button("Choose Homebase - Tasks") { Task { await reminders.load() } }
-                    ForEach(reminders.calendars, id: \.calendarIdentifier) { list in
-                        Button("\(list.title) · \(list.source.title)") { Task { await reminders.connect(list, store: store) } }
-                    }
-                } else {
-                    Button("Sync tasks now") { Task { await reminders.run(store: store) } }
-                    Button("Disconnect reminders bridge") { Task { await reminders.disconnect(store: store) } }
-                }
-                Text("Owners are shown in reminder notes. Apple’s native person assignments are separate. iOS controls background sync.").font(.caption).foregroundStyle(.secondary)
-            }
-            if !reminders.issues.isEmpty {
-                Section("Reminder changes to review") {
-                    ForEach(reminders.issues) { issue in
-                        VStack(alignment: .leading) {
-                            Text(issue.item.title)
-                            Text(issue.missing ? "Missing from the shared list; iCloud may still be syncing." : "Changed in both Homebase and Reminders.").font(.caption)
-                            Button(issue.missing ? "Restore reminder" : "Use Homebase version") { Task { await reminders.resolve(issue, useHomebase: true, store: store) } }
-                            Button(issue.missing ? "Confirm deletion" : "Use Reminders version") { Task { await reminders.resolve(issue, useHomebase: false, store: store) } }
-                        }
-                    }
-                }
-            }
+            RemindersSettings(bridge: reminders)
+            RemindersSettings(bridge: RemindersBridge.dinners)
             Section("Shared iCloud calendar") {
                 Text("Choose your shared iCloud calendar on one phone. Keep the bridge on that phone; both phones see its synced events in Homebase.").font(.footnote)
                 Text(bridge.status).font(.subheadline)
@@ -724,5 +754,66 @@ struct SettingsView: View {
             Section { NavigationLink("Review sync conflicts") { ConflictsView() } }
             Section { Text("Homebase\nA shared place for everyday life.").foregroundStyle(.secondary) }
         }.scrollContentBackground(.hidden).background(Color("Canvas")).navigationTitle("Settings").sheet(isPresented: $repairing) { PairView() }
+    }
+}
+
+struct RemindersSettings: View {
+    @EnvironmentObject var store: Store
+    @ObservedObject var bridge: RemindersBridge
+    var body: some View {
+        Section(bridge.listName) {
+            Text("Create an iCloud list named \(bridge.listName) in Apple Reminders and share it with your family. Connect it here on one phone.").font(.footnote)
+            Text(bridge.status).font(.subheadline)
+            if bridge.selected.isEmpty {
+                Button("Choose \(bridge.listName)") { Task { await bridge.load() } }
+                ForEach(bridge.calendars, id: \.calendarIdentifier) { list in
+                    Button("\(list.title) · \(list.source.title)") { Task { await bridge.connect(list, store: store) } }
+                }
+            } else {
+                Button("Sync now") { Task { await bridge.run(store: store) } }
+                Button("Disconnect reminders bridge") { Task { await bridge.disconnect(store: store) } }
+            }
+            Text(bridge.kind == .task ? "Owners are shown in reminder notes. Apple’s native person assignments are separate. iOS controls background sync." : "Each dinner is dated for its meal day. Add a due date to dinners created in Reminders. All weeks stay synced; recipes remain in Homebase. iOS controls background sync.").font(.caption).foregroundStyle(.secondary)
+        }
+        if !bridge.issues.isEmpty {
+            Section("\(bridge.listName) changes to review") {
+                ForEach(bridge.issues) { issue in
+                    VStack(alignment: .leading) {
+                        Text(issue.item.title)
+                        Text(issue.message ?? (issue.missing ? "Missing from the shared list; iCloud may still be syncing." : "Changed in both Homebase and Reminders.")).font(.caption)
+                        Button(issue.missing ? "Restore reminder" : "Use Homebase version") { Task { await bridge.resolve(issue, useHomebase: true, store: store) } }.disabled(!issue.allowHome)
+                        Button(issue.missing ? "Confirm deletion" : "Use Reminders version") { Task { await bridge.resolve(issue, useHomebase: false, store: store) } }.disabled(!issue.allowApple)
+                    }
+                }
+            }
+        }
+    }
+}
+
+private extension UTType {
+    static let homebaseItem = UTType(exportedAs: "xyz.hauptsec.homebase.item", conformingTo: .data)
+}
+
+private struct ItemDropTarget: ViewModifier {
+    @EnvironmentObject var store: Store
+    let destination: ItemDestination?
+    @State private var targeted = false
+
+    @ViewBuilder func body(content: Content) -> some View {
+        if let destination {
+            content.contentShape(Rectangle())
+                .background(targeted ? Color.accentColor.opacity(0.15) : Color.clear)
+                .onDrop(of: [UTType.homebaseItem], isTargeted: $targeted) { providers in
+                    let matches = providers.filter { $0.hasItemConformingToTypeIdentifier(UTType.homebaseItem.identifier) }
+                    guard !matches.isEmpty else { return false }
+                    for provider in matches {
+                        _ = provider.loadDataRepresentation(forTypeIdentifier: UTType.homebaseItem.identifier) { data, _ in
+                            guard let data, data.count == 36, let text = String(data: data, encoding: .utf8), let id = UUID(uuidString: text) else { return }
+                            Task { @MainActor in store.move(id, to: destination) }
+                        }
+                    }
+                    return true
+                }
+        } else { content }
     }
 }

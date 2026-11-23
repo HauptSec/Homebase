@@ -197,3 +197,38 @@ struct AppRelease: Codable {
 }
 struct ReleaseEnvelope: Codable { let release: AppRelease? }
 struct InstallLink: Codable { let url: String; let expiresAt: Double }
+
+/// A move changes the item's grouping field; the normal save queue syncs it everywhere.
+enum ItemDestination {
+    case taskOwner(String?)
+    case groceryStore(String)
+    case dinnerDay(Date)
+}
+
+extension Item {
+    var canDragBetweenGroups: Bool {
+        !deleted && (kind == .dinner || ((kind == .task || kind == .grocery) && !done))
+    }
+
+    @discardableResult mutating func move(to destination: ItemDestination, calendar: Calendar = .current) -> Bool {
+        guard canDragBetweenGroups else { return false }
+        switch destination {
+        case .taskOwner(let owner):
+            guard kind == .task, owner.map({ ["Alex", "Laura"].contains($0) }) ?? true, assignedOwner != owner else { return false }
+            assignedOwner = owner
+        case .groceryStore(let name):
+            let name = name.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard kind == .grocery, name.count <= 100, store != name else { return false }
+            store = name
+        case .dinnerDay(let day):
+            guard kind == .dinner, let when, !calendar.isDate(when, inSameDayAs: day) else { return false }
+            let time = calendar.dateComponents([.hour, .minute, .second], from: when)
+            guard let moved = calendar.date(bySettingHour: time.hour ?? 0, minute: time.minute ?? 0, second: time.second ?? 0, of: calendar.startOfDay(for: day)) else { return false }
+            let delta = moved.timeIntervalSince(when)
+            date = moved.timeIntervalSince1970
+            if let reminderAt { self.reminderAt = reminderAt + delta }
+            if let endDate { self.endDate = endDate + delta }
+        }
+        return true
+    }
+}

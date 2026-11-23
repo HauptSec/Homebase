@@ -21,9 +21,20 @@
 	<key>CFBundleVersion</key>
 	<string>$(CURRENT_PROJECT_VERSION)</string>
 	<key>NSRemindersFullAccessUsageDescription</key>
-	<string>Homebase syncs tasks with the shared Homebase - Tasks list you choose.</string>
+	<string>Homebase syncs tasks and dinners with the shared Homebase - Tasks and Homebase - Dinners lists you choose.</string>
 	<key>NSCalendarsFullAccessUsageDescription</key>
 	<string>Homebase syncs the shared calendar you choose with your household. Other calendars are not uploaded.</string>
+	<key>UTExportedTypeDeclarations</key>
+	<array>
+		<dict>
+			<key>UTTypeIdentifier</key>
+			<string>xyz.hauptsec.homebase.item</string>
+			<key>UTTypeDescription</key>
+			<string>Homebase item</string>
+			<key>UTTypeConformsTo</key>
+			<array><string>public.data</string></array>
+		</dict>
+	</array>
 	<key>UIApplicationSceneManifest</key>
 	<dict>
 		<key>UIApplicationSupportsMultipleScenes</key>
