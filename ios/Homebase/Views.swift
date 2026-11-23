@@ -147,7 +147,7 @@ struct ItemRow: View {
                     Text(Double(cents) / 100, format: .currency(code: item.currency))
                 }.font(.subheadline).monospacedDigit().foregroundStyle(item.isIncome ? Color.green : Color.primary)
             }
-        }.padding(.vertical, 6)
+        }.padding(.vertical, 6).homebaseAssistantContext(item)
     }
 }
 struct TaskCompletionDetails: View {
@@ -178,7 +178,7 @@ struct ItemList: View {
     var values: [Item] {
         store.items(kind).filter { item in
             let match = search.isEmpty || item.title.localizedCaseInsensitiveContains(search) || item.notes.localizedCaseInsensitiveContains(search)
-            if kind == .grocery { return match && item.visibleOnGroceryList(on: calendarToday) }
+            if kind == .grocery { return match && item.visibleOnGroceryList(on: calendarToday) && (showHistory ? item.done : !item.done) }
             if kind == .bill || kind == .task { return match && (showHistory ? item.done : !item.done) }
             if kind == .event {
                 guard let start = item.when else { return false }
@@ -189,6 +189,7 @@ struct ItemList: View {
             if kind == .dinner { return match && (item.when.map { $0 >= week && $0 < Calendar.current.date(byAdding: .day, value: 7, to: week)! } ?? false) }
             return match
         }.sorted {
+            if kind == .grocery && showHistory { return ($0.completedAt ?? 0) > ($1.completedAt ?? 0) }
             if kind == .task && showHistory { return ($0.completedAt ?? 0) > ($1.completedAt ?? 0) }
             if kind == .task { return Item.taskOrder($0, $1) }
             if kind == .event && showHistory { return ($0.date ?? 0) > ($1.date ?? 0) }
@@ -202,6 +203,9 @@ struct ItemList: View {
             List {
                 if kind == .task {
                     Button(showHistory ? "Back to active tasks" : "Completed tasks", systemImage: showHistory ? "checklist" : "clock.arrow.circlepath") { showHistory.toggle() }
+                }
+                if kind == .grocery {
+                    Button(showHistory ? "Back to shopping list" : "Completed Items", systemImage: showHistory ? "basket" : "clock.arrow.circlepath") { showHistory.toggle() }
                 }
                 if kind == .bill {
                     Picker("Budget range", selection: $showHistory) {
@@ -227,11 +231,12 @@ struct ItemList: View {
                 }
                 if kind == .grocery {
                     let groceries = values
-                    let completed = groceries.filter(\.done).sorted { ($0.completedAt ?? 0) > ($1.completedAt ?? 0) }
-                    Section("Completed Items") {
-                        rows(completed)
-                        if completed.isEmpty { Text("No items completed today.").foregroundStyle(.secondary) }
-                    }
+                    if showHistory {
+                        rows(groceries)
+                        if groceries.isEmpty {
+                            ContentUnavailableView(search.isEmpty ? "No items completed today" : "No matching items", systemImage: "checkmark.circle", description: Text("Checked-off items appear here for the rest of the day."))
+                        }
+                    } else {
                     let groups = Dictionary(grouping: groceries.filter { !$0.done }) {
                         $0.store.trimmingCharacters(in: .whitespacesAndNewlines)
                     }
@@ -241,6 +246,7 @@ struct ItemList: View {
                             rows(groups[name] ?? [], destination: destination)
                             if (groups[name] ?? []).isEmpty { dropPlaceholder("Drop an item here", destination: destination) }
                         } header: { dropHeader(name.isEmpty ? "General" : name, destination: destination) }
+                    }
                     }
                 } else if kind == .dinner {
                     ForEach(0..<7, id: \.self) { offset in
@@ -271,7 +277,7 @@ struct ItemList: View {
                 } else if values.isEmpty && kind == .event {
                     ContentUnavailableView(search.isEmpty ? (showHistory ? "No past events" : "No upcoming events") : "No matching events", systemImage: "calendar", description: Text(search.isEmpty ? (showHistory ? "Past events will appear here, newest first." : "Tap + to add an event.") : "Try a different search or calendar range."))
                 } else if values.isEmpty && kind != .dinner && kind != .grocery { ContentUnavailableView("Room for \(kind.title.lowercased())", systemImage: kind.symbol, description: Text("Tap + to add your first item.")) }
-            }.scrollContentBackground(.hidden).background(Color("Canvas")).navigationTitle(kind == .task && showHistory ? "Completed tasks" : kind.title).searchable(text: $search)
+            }.scrollContentBackground(.hidden).background(Color("Canvas")).navigationTitle(kind == .task && showHistory ? "Completed tasks" : kind == .grocery && showHistory ? "Completed Items" : kind.title).searchable(text: $search)
                 .toolbar { ToolbarItem(placement: .topBarTrailing) { Button("Add", systemImage: "plus") { editing = Item(kind: kind) } } }
                 .onAppear { calendarToday = Calendar.current.startOfDay(for: Date()) }
                 .onReceive(NotificationCenter.default.publisher(for: UIApplication.significantTimeChangeNotification)) { _ in
@@ -348,6 +354,7 @@ struct MoreView: View {
     var body: some View {
         NavigationStack {
             List {
+                Section { NavigationLink { AskHomebaseView() } label: { Label("Ask Homebase", systemImage: "sparkles") } }
                 Section("Keep life moving") {
                     NavigationLink { ItemList(kind: .task) } label: { Label("Tasks & reminders", systemImage: "checkmark.circle") }
                     NavigationLink { ItemList(kind: .bill) } label: { Label("Budget", systemImage: "creditcard") }

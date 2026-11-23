@@ -168,9 +168,23 @@ struct Item: Codable, Identifiable, Equatable {
 struct Mutation: Codable, Identifiable {
     var mutationId = UUID()
     var source: String?
+    var preserveAssignedOwner: Bool?
     var baseRevision: Int
     var item: Item
     var id: UUID { mutationId }
+}
+extension Mutation {
+    enum CodingKeys: String, CodingKey { case mutationId, source, preserveAssignedOwner, baseRevision, item }
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        mutationId = try c.decode(UUID.self, forKey: .mutationId)
+        source = try c.decodeIfPresent(String.self, forKey: .source)
+        baseRevision = try c.decode(Int.self, forKey: .baseRevision)
+        item = try c.decode(Item.self, forKey: .item)
+        let fields = try c.nestedContainer(keyedBy: Item.CodingKeys.self, forKey: .item)
+        preserveAssignedOwner = try c.decodeIfPresent(Bool.self, forKey: .preserveAssignedOwner)
+            ?? (fields.contains(.assignedOwner) ? nil : true)
+    }
 }
 struct SyncPage: Codable { let cursor: Int; let items: [Item]; let hasMore: Bool; let ownerName: String? }
 struct MutationResult: Codable { let item: Item }
@@ -183,6 +197,15 @@ struct Conflict: Codable, Identifiable {
     let remote: Item
 }
 struct Cache: Codable {
+    var schemaVersion: Int?
+    /// Older apps advanced the cursor while discarding fields they did not understand.
+    /// Replay the change log once on upgrade; normal sync preserves queued edits/conflicts.
+    @discardableResult mutating func prepareForCurrentSchema() -> Bool {
+        guard schemaVersion != 1 else { return false }
+        cursor = 0
+        schemaVersion = 1
+        return true
+    }
     var items: [Item] = []
     var queue: [Mutation] = []
     var conflicts: [Conflict] = []

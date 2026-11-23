@@ -98,6 +98,25 @@ class APITests(unittest.TestCase):
         # Releasing dinners never releases the Tasks bridge.
         self.assertEqual(self.client.post('/v1/reminders/claim', headers=self.b).status_code, 409)
 
+    def test_legacy_queued_edits_preserve_assigned_owner(self):
+        payload = self.mutation(kind='task', assignedOwner='Laura')
+        item = self.client.post('/v1/mutations', headers=self.a, json=payload).json()['item']
+        # An old cached mutation gains a null field when decoded by the upgraded app.
+        item['assignedOwner'] = None
+        item['notes'] = 'Unrelated offline edit'
+        saved = self.client.post('/v1/mutations', headers=self.b, json={
+            'mutationId': str(uuid4()), 'baseRevision': item['revision'],
+            'preserveAssignedOwner': True, 'item': item})
+        self.assertEqual(saved.status_code, 200, saved.text)
+        self.assertEqual(saved.json()['item']['assignedOwner'], 'Laura')
+        self.assertEqual(saved.json()['item']['notes'], 'Unrelated offline edit')
+        # A deliberate clear from a current client still works.
+        item = saved.json()['item']
+        item['assignedOwner'] = None
+        cleared = self.client.post('/v1/mutations', headers=self.a, json={
+            'mutationId': str(uuid4()), 'baseRevision': item['revision'], 'item': item})
+        self.assertIsNone(cleared.json()['item']['assignedOwner'])
+
     def test_creation_backfill_uses_first_change(self):
         payload = self.mutation(kind='task')
         item = self.client.post('/v1/mutations', headers=self.a, json=payload).json()['item']

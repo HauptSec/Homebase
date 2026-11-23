@@ -62,7 +62,7 @@ enum Keychain {
             return
         }
         if FileManager.default.fileExists(atPath: file.path) {
-            do { cache = try decoder.decode(Cache.self, from: Data(contentsOf: file)) }
+            do { cache = try decoder.decode(Cache.self, from: Data(contentsOf: file)); cache.prepareForCurrentSchema() }
             catch { cacheHealthy = false; self.error = "The local cache could not be read. It has been preserved; do not reinstall if you have unsynced edits." }
         }
     }
@@ -80,6 +80,7 @@ enum Keychain {
         do {
             try FileManager.default.createDirectory(at: file.deletingLastPathComponent(), withIntermediateDirectories: true)
             try encoder.encode(cache).write(to: file, options: [.atomic, .completeFileProtectionUntilFirstUserAuthentication])
+            HomebaseDiscovery.schedule(cache.items)
             return true
         } catch { self.error = "Could not save offline changes: \(error.localizedDescription)"; return false }
     }
@@ -87,15 +88,39 @@ enum Keychain {
         if let i = cache.items.firstIndex(where: { $0.id == item.id }) { cache.items[i] = item }
         else { cache.items.append(item) }
     }
-    func save(_ item: Item, source: String? = nil) {
+    @discardableResult func save(_ item: Item, source: String? = nil) -> Bool {
         var item = item
         if item.createdAt == nil { item.createdAt = cache.items.first(where: { $0.id == item.id })?.createdAt ?? (item.updatedAt > 0 ? item.updatedAt : Date().timeIntervalSince1970) }
-        guard !item.isHoliday else { return }
-        guard cacheHealthy else { return }
+        guard !item.isHoliday, cacheHealthy else { return false }
         upsert(item)
         // Queue every edit; never change an in-flight request's idempotency key or body.
         cache.queue.append(Mutation(source: source, baseRevision: item.revision, item: item))
-        if persist() { refreshEventAlerts(prompt: item.kind == .event && !(item.alertOffsets ?? []).isEmpty); Task { await sync() } }
+        let saved = persist()
+        if saved { refreshEventAlerts(prompt: item.kind == .event && !(item.alertOffsets ?? []).isEmpty); Task { await sync() } }
+        return saved
+    }
+    func prepareAssistant() async throws {
+        guard paired else { throw AssistantError(message: "Open Homebase and pair this phone first.") }
+        guard cacheHealthy else { throw AssistantError(message: "Open Homebase to resolve the local cache error first.") }
+        // Share an in-flight sync rather than racing it or treating it as finished.
+        for _ in 0..<100 where syncing { try await Task.sleep(for: .milliseconds(100)) }
+        guard !syncing else { throw AssistantError(message: "Homebase is still syncing. Please try again shortly.") }
+        await sync()
+    }
+    func assistantItem(_ id: UUID) throws -> Item {
+        guard let item = items.first(where: { $0.id == id && !$0.deleted && !$0.isHoliday }) else { throw AssistantError(message: "That item is no longer available.") }
+        guard !cache.conflicts.contains(where: { $0.id == id }) else { throw AssistantError(message: "Review this item's sync conflict in Homebase first.") }
+        return item
+    }
+    func saveFromAssistant(_ item: Item) async throws -> String {
+        try AssistantData.validate(item)
+        guard save(item) else { throw AssistantError(message: "Homebase could not save the change on this phone.") }
+        await sync()
+        if cache.conflicts.contains(where: { $0.id == item.id }) { return "Saved on this phone, but a conflicting household edit needs review in Homebase." }
+        if cache.queue.contains(where: { $0.item.id == item.id }) { return "Saved on this phone. Household sync is pending." }
+        await CalendarBridge.shared.run(store: self)
+        await RemindersBridge.runAll(store: self)
+        return "Saved in Homebase."
     }
     func move(_ id: UUID, to destination: ItemDestination) {
         // Resolve the latest local object at drop time, including any pending offline edits.

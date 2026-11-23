@@ -109,6 +109,18 @@ import Foundation
         for key in ["assignedOwner", "createdAt", "reminderKey"] { legacy.removeValue(forKey: key) }
         let unassigned = try JSONDecoder().decode(Item.self, from: JSONSerialization.data(withJSONObject: legacy))
         precondition(unassigned.assignedOwner == nil && unassigned.createdAt == nil)
+        var legacyQueueItem = legacy
+        legacyQueueItem["assignedOwner"] = nil
+        let queuedBody: [String: Any] = ["mutationId": UUID().uuidString, "baseRevision": 3, "item": legacyQueueItem]
+        let decodedQueue = try JSONDecoder().decode(Mutation.self, from: JSONSerialization.data(withJSONObject: queuedBody))
+        precondition(decodedQueue.preserveAssignedOwner == true)
+        var oldCache = Cache(items: [task], queue: [decodedQueue], cursor: 99)
+        precondition(oldCache.prepareForCurrentSchema() && oldCache.cursor == 0)
+        precondition(oldCache.items == [task] && oldCache.queue.count == 1)
+        oldCache.cursor = 100
+        precondition(!oldCache.prepareForCurrentSchema() && oldCache.cursor == 100)
+        let encodedQueue = try JSONSerialization.jsonObject(with: JSONEncoder().encode(decodedQueue)) as! [String: Any]
+        precondition(encodedQueue["preserveAssignedOwner"] as? Bool == true)
         print("Task completion passed: offline timestamp, attribution, reopening and cache compatibility")
         print("Home tests passed: event draft dates, dinner expiry, history, DST, year boundary, overdue tasks/bills and event overlap")
     }

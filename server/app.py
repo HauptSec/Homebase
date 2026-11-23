@@ -192,6 +192,7 @@ class Item(BaseModel):
 
 
 class Mutation(BaseModel):
+    preserveAssignedOwner: bool = False
     source: Literal['reminders', 'dinner-reminders'] | None = None
     mutationId: UUID
     baseRevision: int = Field(ge=0)
@@ -335,6 +336,8 @@ def mutate(payload: Mutation, actor=Depends(device)):
             for field in ('assignedOwner', 'reminderKey', 'budgetType', 'prepSteps', 'cookingSteps', 'recurrenceUntil', 'recurrenceTimeZone', 'seriesID', 'occurrenceDate', 'seriesVersion', 'customFrequency', 'customInterval', 'repeatWeekdays', 'location', 'latitude', 'longitude', 'alertOffsets'):
                 if field not in payload.item.model_fields_set and field in previous_item:
                     item[field] = previous_item[field]
+        if current and payload.preserveAssignedOwner:
+            item['assignedOwner'] = previous_item.get('assignedOwner')
         if item.get('seriesID'):
             parent_row = c.execute('SELECT body FROM items WHERE id=?', (item['seriesID'],)).fetchone()
             parent = json.loads(parent_row['body']) if parent_row else None

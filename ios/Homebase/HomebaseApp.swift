@@ -42,6 +42,7 @@ import EventKit
             RootView().environmentObject(store).tint(Color("AccentColor"))
                 .preferredColorScheme(appearance == "light" ? .light : appearance == "dark" ? .dark : nil)
                 .task {
+                    HomebaseShortcuts.updateAppShortcutParameters()
                     #if DEBUG
                     if ProcessInfo.processInfo.arguments.contains("--native-series-smoke") { await NativeSeriesSmoke.run(store: store); return }
                     #endif

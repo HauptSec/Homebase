@@ -21,6 +21,12 @@
 		0000000000000000000000D2 /* NativeSeriesSmoke.swift in Sources */ = {isa = PBXBuildFile; fileRef = 00000000000000000000006E /* NativeSeriesSmoke.swift */; };
 		0000000000000000000000D3 /* RemindersBridge.swift in Sources */ = {isa = PBXBuildFile; fileRef = 00000000000000000000006F /* RemindersBridge.swift */; };
 		0000000000000000000000D4 /* ReminderFields.swift in Sources */ = {isa = PBXBuildFile; fileRef = 000000000000000000000070 /* ReminderFields.swift */; };
+		0000000000000000000000DA /* AskHomebaseView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 000000000000000000000076 /* AskHomebaseView.swift */; };
+		0000000000000000000000D9 /* HomebaseDiscovery.swift in Sources */ = {isa = PBXBuildFile; fileRef = 000000000000000000000075 /* HomebaseDiscovery.swift */; };
+		0000000000000000000000D8 /* AssistantSchemas.swift in Sources */ = {isa = PBXBuildFile; fileRef = 000000000000000000000074 /* AssistantSchemas.swift */; };
+		0000000000000000000000D7 /* HomebaseQuestions.swift in Sources */ = {isa = PBXBuildFile; fileRef = 000000000000000000000073 /* HomebaseQuestions.swift */; };
+		0000000000000000000000D6 /* HomebaseIntents.swift in Sources */ = {isa = PBXBuildFile; fileRef = 000000000000000000000072 /* HomebaseIntents.swift */; };
+		0000000000000000000000D5 /* AssistantData.swift in Sources */ = {isa = PBXBuildFile; fileRef = 000000000000000000000071 /* AssistantData.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -39,6 +45,12 @@
 		00000000000000000000006E /* NativeSeriesSmoke.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NativeSeriesSmoke.swift; sourceTree = "<group>"; };
 		00000000000000000000006F /* RemindersBridge.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RemindersBridge.swift; sourceTree = "<group>"; };
 		000000000000000000000070 /* ReminderFields.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ReminderFields.swift; sourceTree = "<group>"; };
+		000000000000000000000076 /* AskHomebaseView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AskHomebaseView.swift; sourceTree = "<group>"; };
+		000000000000000000000075 /* HomebaseDiscovery.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HomebaseDiscovery.swift; sourceTree = "<group>"; };
+		000000000000000000000074 /* AssistantSchemas.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AssistantSchemas.swift; sourceTree = "<group>"; };
+		000000000000000000000073 /* HomebaseQuestions.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HomebaseQuestions.swift; sourceTree = "<group>"; };
+		000000000000000000000072 /* HomebaseIntents.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HomebaseIntents.swift; sourceTree = "<group>"; };
+		000000000000000000000071 /* AssistantData.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AssistantData.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -76,6 +88,12 @@
 				00000000000000000000006E /* NativeSeriesSmoke.swift */,
 				00000000000000000000006F /* RemindersBridge.swift */,
 				000000000000000000000070 /* ReminderFields.swift */,
+				000000000000000000000076 /* AskHomebaseView.swift */,
+				000000000000000000000075 /* HomebaseDiscovery.swift */,
+				000000000000000000000074 /* AssistantSchemas.swift */,
+				000000000000000000000073 /* HomebaseQuestions.swift */,
+				000000000000000000000072 /* HomebaseIntents.swift */,
+				000000000000000000000071 /* AssistantData.swift */,
 				00000000000000000000012C /* Assets.xcassets */,
 			);
 			path = Homebase;
@@ -164,6 +182,12 @@
 				0000000000000000000000D2 /* NativeSeriesSmoke.swift in Sources */,
 				0000000000000000000000D3 /* RemindersBridge.swift in Sources */,
 				0000000000000000000000D4 /* ReminderFields.swift in Sources */,
+				0000000000000000000000DA /* AskHomebaseView.swift in Sources */,
+				0000000000000000000000D9 /* HomebaseDiscovery.swift in Sources */,
+				0000000000000000000000D8 /* AssistantSchemas.swift in Sources */,
+				0000000000000000000000D7 /* HomebaseQuestions.swift in Sources */,
+				0000000000000000000000D6 /* HomebaseIntents.swift in Sources */,
+				0000000000000000000000D5 /* AssistantData.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
