@@ -212,7 +212,6 @@ struct ItemList: View {
                         Text("Upcoming").tag(false)
                         Text("Completed").tag(true)
                     }.pickerStyle(.segmented)
-                    Text("Track income and expenses by date. Mark an entry received or paid to move a repeating entry to its next date. Overdue entries stay visible until completed.").font(.footnote).foregroundStyle(.secondary)
                 }
                 if kind == .event {
                     Picker("Calendar range", selection: $showHistory) {
