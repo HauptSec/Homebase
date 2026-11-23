@@ -60,7 +60,8 @@ extension View {
         else if #available(iOS 18.4, *) { self.appEntityIdentifier(EntityIdentifier(for: HomebaseEntity.self, identifier: item.id)) }
         else { self }
         #else
-        if #available(iOS 18.4, *) { self.appEntityIdentifier(EntityIdentifier(for: HomebaseEntity.self, identifier: item.id)) } else { self }
+        // Older SDKs can index entities but do not expose this SwiftUI modifier.
+        self
         #endif
     }
 }
